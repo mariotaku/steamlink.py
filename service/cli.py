@@ -29,7 +29,7 @@ async def ainput(string: str) -> str:
 
 
 class ServiceProtocolImpl(ServiceProtocol):
-    discovered = {}
+    discovered: [str, tuple[Message, Message]] = {}
     command: CliCommand = None
 
     def __init__(self):
@@ -42,12 +42,13 @@ class ServiceProtocolImpl(ServiceProtocol):
         super().connection_made(transport)
         asyncio.get_event_loop().create_task(self.scan())
 
-    def message_received(self, msg_type: int, msg: Message, addr: tuple[str, int]):
-        if self.command and self.command.message_received(msg_type, msg, addr):
+    def message_received(self, header: Message, msg: Message, addr: tuple[str, int]):
+        msg_type = header.msg_type
+        if self.command and self.command.message_received(header, msg, addr):
             return
         elif msg_type == k_ERemoteClientBroadcastMsgStatus:
             ip, _ = addr
-            self.discovered[ip] = msg
+            self.discovered[ip] = (header, msg)
         else:
             print(f'{ERemoteClientBroadcastMsg.Name(msg_type)}: {msg}')
 
@@ -68,7 +69,7 @@ class ServiceProtocolImpl(ServiceProtocol):
         print(host)
 
     async def pair(self, args):
-        host = self.discovered.get(args.ip, None)
+        _, host = self.discovered.get(args.ip, (None, None))
         if not host:
             print('Host info not available')
             return
@@ -76,11 +77,11 @@ class ServiceProtocolImpl(ServiceProtocol):
         await self.command.run()
 
     async def stream(self, args):
-        host = self.discovered.get(args.ip, None)
+        header, host = self.discovered.get(args.ip, (None, None))
         if not host:
             print('Host info not available')
             return
-        self.command = StreamCommand(self, args.ip, host)
+        self.command = StreamCommand(self, args.ip, header, host)
         await self.command.run()
 
     async def read_command(self):

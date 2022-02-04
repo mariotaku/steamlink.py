@@ -6,10 +6,9 @@ from protobuf.steammessages_remoteclient_discovery_pb2 import CMsgRemoteDeviceSt
 from service.common import get_device_id, device_token, get_secret_key
 
 
-def streaming_req(request_id: int) -> Message:
+def streaming_req(request_id: int, client_id: int) -> Message:
     message = CMsgRemoteDeviceStreamingRequest()
-    device_id = get_device_id()
-    message.client_id = device_id
+    message.client_id = client_id
     message.request_id = request_id
     message.form_factor = k_EStreamDeviceFormFactorTV
     message.enable_video_streaming = True
@@ -25,7 +24,7 @@ def streaming_req(request_id: int) -> Message:
     message.stream_interface = k_EStreamInterfaceDesktop
     message.supported_transport.extend([k_EStreamTransportUDP, k_EStreamTransportUDPRelay, k_EStreamTransportSDR])
     message.restricted = False
-    message.device_token = device_token(device_id, get_secret_key())
+    message.device_token = device_token(get_device_id(), get_secret_key())
     message.device_version = 'build 827'
     message.network_test = False
     message.gameid = 0

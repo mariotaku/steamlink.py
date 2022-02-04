@@ -26,8 +26,8 @@ class PairCommand(CliCommand):
             self.send_message(k_ERemoteDeviceAuthorizationRequest, message, (self.ip, self.host.connect_port))
             await asyncio.sleep(3)
 
-    def message_received(self, msg_type: ERemoteClientBroadcastMsg, msg: Message, addr: tuple[str, int]) -> bool:
-        if msg_type != k_ERemoteDeviceAuthorizationResponse:
+    def message_received(self, header: Message, msg: Message, addr: tuple[str, int]) -> bool:
+        if header.msg_type != k_ERemoteDeviceAuthorizationResponse:
             return False
         print(f'message arrived: {msg}')
         if msg.result == k_ERemoteDeviceAuthorizationSuccess:

@@ -1,3 +1,4 @@
+import os.path
 from base64 import b64decode
 
 import yaml
@@ -7,7 +8,7 @@ from protobuf.steammessages_remoteclient_discovery_pb2 import CMsgRemoteDeviceAu
 from service import ccrypto
 from service.common import get_device_id, device_token
 
-with open('pubkey.yml') as f:
+with open(os.path.join(os.path.dirname(__file__), 'pubkey.yml')) as f:
     keys = yaml.load(f, Loader=yaml.FullLoader)
 
 

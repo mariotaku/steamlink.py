@@ -9,7 +9,8 @@ from google.protobuf.message import Message
 from protobuf.steammessages_remoteclient_discovery_pb2 import CMsgRemoteClientBroadcastHeader, \
     CMsgRemoteClientBroadcastDiscovery, k_ERemoteClientBroadcastMsgDiscovery, CMsgRemoteClientBroadcastStatus, \
     k_ERemoteClientBroadcastMsgStatus, CMsgRemoteDeviceAuthorizationResponse, k_ERemoteDeviceAuthorizationResponse, \
-    k_ERemoteDeviceAuthorizationRequest, CMsgRemoteDeviceAuthorizationRequest
+    k_ERemoteDeviceAuthorizationRequest, CMsgRemoteDeviceAuthorizationRequest, k_ERemoteDeviceProofRequest, \
+    CMsgRemoteDeviceProofRequest, CMsgRemoteDeviceStreamingResponse, k_ERemoteDeviceStreamingResponse
 from service import ccrypto
 
 pkt_magic: bytes = bytes([0xff, 0xff, 0xff, 0xff, 0x21, 0x4c, 0x5f, 0xa0])
@@ -19,6 +20,8 @@ pkt_types: dict[int, type[Message]] = {
     k_ERemoteClientBroadcastMsgStatus: CMsgRemoteClientBroadcastStatus,
     k_ERemoteDeviceAuthorizationRequest: CMsgRemoteDeviceAuthorizationRequest,
     k_ERemoteDeviceAuthorizationResponse: CMsgRemoteDeviceAuthorizationResponse,
+    k_ERemoteDeviceStreamingResponse: CMsgRemoteDeviceStreamingResponse,
+    k_ERemoteDeviceProofRequest: CMsgRemoteDeviceProofRequest,
 }
 
 
@@ -69,7 +72,7 @@ def set_secret_key(key: bytes):
     _save_bytes('.client/secret_key.txt', key)
 
 
-def message_parse(data: bytes) -> tuple[int, Message]:
+def message_parse(data: bytes) -> tuple[Message, Message]:
     mlen = len(data)
     if mlen < 20:
         raise ValueError('Invalid packet: too short')
@@ -89,7 +92,7 @@ def message_parse(data: bytes) -> tuple[int, Message]:
     offset += 4
     body = pkt_types[header.msg_type]()
     body.ParseFromString(data[offset:offset + body_len])
-    return header.msg_type, body
+    return header, body
 
 
 def message_serialize(msg_type: int, body: Message) -> bytes:
@@ -118,12 +121,12 @@ class ServiceProtocol(asyncio.DatagramProtocol):
         self.transport = transport
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
-        msg_type, message = message_parse(data)
-        self.message_received(msg_type, message, addr)
+        header, message = message_parse(data)
+        self.message_received(header, message, addr)
 
     def send_message(self, msg_type: int, msg: Message, addr: tuple[str, int]):
         data = message_serialize(msg_type, msg)
         self.transport.sendto(data, addr)
 
-    def message_received(self, msg_type: int, msg: Message, addr: tuple[str, int]):
+    def message_received(self, header: Message, msg: Message, addr: tuple[str, int]):
         pass
