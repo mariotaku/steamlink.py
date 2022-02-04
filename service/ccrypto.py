@@ -28,5 +28,12 @@ def symmetric_encrypt_with_iv(plaintext: bytes, iv: bytes, key: bytes, with_iv: 
     return encrypted
 
 
+def symmetric_decrypt(encrypted: bytes, key: bytes) -> bytes:
+    iv_cipher = AES.new(key, AES.MODE_ECB)
+    iv = iv_cipher.decrypt(encrypted[0:16])
+    cipher = AES.new(key, AES.MODE_CBC, iv)
+    return cipher.decrypt(encrypted[16:])
+
+
 def symmetric_encrypt(plaintext: bytes, key: bytes) -> bytes:
     return symmetric_encrypt_with_iv(plaintext, secrets.token_bytes(16), key, True)

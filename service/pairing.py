@@ -3,9 +3,9 @@ from base64 import b64decode
 import yaml
 from google.protobuf.message import Message
 
-from common import get_device_id
 from protobuf.steammessages_remoteclient_discovery_pb2 import CMsgRemoteDeviceAuthorizationRequest
 from service import ccrypto
+from service.common import get_device_id, device_token
 
 with open('pubkey.yml') as f:
     keys = yaml.load(f, Loader=yaml.FullLoader)
@@ -28,10 +28,6 @@ def authorization_req_ticket_plain(dev_id: int, pin: str, enc_key: bytes, name: 
     ticket.device_serial = 'A1B2C3D4E5'
     ticket.device_provisioning_id = 123456
     return ticket
-
-
-def device_token(dev_id: int, enc_key: bytes) -> bytes:
-    return ccrypto.symmetric_encrypt(dev_id.to_bytes(8, byteorder='little', signed=False), enc_key)
 
 
 def authorization_req(universe: int, device_name: str, enc_key: bytes, pin: str) -> Message:

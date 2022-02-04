@@ -11,6 +11,7 @@ from protobuf.steammessages_remoteclient_discovery_pb2 import k_ERemoteClientBro
     k_ERemoteClientBroadcastMsgStatus, ERemoteClientBroadcastMsg
 from service.commands.base import CliCommand
 from service.commands.pair import PairCommand
+from service.commands.stream import StreamCommand
 from .common import ServiceProtocol
 
 
@@ -74,6 +75,14 @@ class ServiceProtocolImpl(ServiceProtocol):
         self.command = PairCommand(self, args.ip, host)
         await self.command.run()
 
+    async def stream(self, args):
+        host = self.discovered.get(args.ip, None)
+        if not host:
+            print('Host info not available')
+            return
+        self.command = StreamCommand(self, args.ip, host)
+        await self.command.run()
+
     async def read_command(self):
         while True:
             try:
@@ -94,6 +103,9 @@ class ServiceProtocolImpl(ServiceProtocol):
         pair = subparsers.add_parser('pair')
         pair.set_defaults(action=self.pair)
         pair.add_argument('ip', type=str)
+        stream = subparsers.add_parser('stream')
+        stream.set_defaults(action=self.stream)
+        stream.add_argument('ip', type=str)
         return parser
 
 

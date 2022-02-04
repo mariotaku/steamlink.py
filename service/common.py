@@ -10,6 +10,7 @@ from protobuf.steammessages_remoteclient_discovery_pb2 import CMsgRemoteClientBr
     CMsgRemoteClientBroadcastDiscovery, k_ERemoteClientBroadcastMsgDiscovery, CMsgRemoteClientBroadcastStatus, \
     k_ERemoteClientBroadcastMsgStatus, CMsgRemoteDeviceAuthorizationResponse, k_ERemoteDeviceAuthorizationResponse, \
     k_ERemoteDeviceAuthorizationRequest, CMsgRemoteDeviceAuthorizationRequest
+from service import ccrypto
 
 pkt_magic: bytes = bytes([0xff, 0xff, 0xff, 0xff, 0x21, 0x4c, 0x5f, 0xa0])
 
@@ -101,6 +102,10 @@ def message_serialize(msg_type: int, body: Message) -> bytes:
     result += struct.pack('<1I', len(body_bytes))
     result += body_bytes
     return result
+
+
+def device_token(dev_id: int, enc_key: bytes) -> bytes:
+    return ccrypto.symmetric_encrypt(dev_id.to_bytes(8, byteorder='little', signed=False), enc_key)
 
 
 class ServiceProtocol(asyncio.DatagramProtocol):
