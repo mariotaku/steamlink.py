@@ -1,2 +1,2 @@
 protobuf~=3.19.4
-python-mbedtls~=1.6.0
+pycryptodome~=3.14.0
