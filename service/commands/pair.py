@@ -15,27 +15,23 @@ class PairCommand(CliCommand):
         super().__init__(protocol)
         self.ip = ip
         self.host = host
-        self.enckey = secrets.token_bytes(32)
-        self.pin = '%04d' % secrets.randbelow(10000)
         self.ended = False
 
-    async def poll(self):
+    async def run(self):
+        enckey = common.get_secret_key()
+        pin = '%04u' % secrets.randbelow(10000)
+        print(f'Pair with PIN {pin}')
         while not self.ended:
-            message = pairing.authorization_req(self.host.euniverse, 'Microwave Oven', self.enckey, self.pin)
-            self.enckey = message.device_token
+            message = pairing.authorization_req(self.host.euniverse, 'Microwave Oven', enckey, pin)
             self.send_message(k_ERemoteDeviceAuthorizationRequest, message, (self.ip, self.host.connect_port))
             await asyncio.sleep(3)
-
-    async def run(self):
-        print(f'Pair with PIN {self.pin}')
-        await self.poll()
 
     def message_received(self, msg_type: ERemoteClientBroadcastMsg, msg: Message, addr: tuple[str, int]) -> bool:
         if msg_type != k_ERemoteDeviceAuthorizationResponse:
             return False
         print(f'message arrived: {msg}')
         if msg.result == k_ERemoteDeviceAuthorizationSuccess:
-            common.set_secret_key(self.enckey)
+            common.set_steamid(msg.steamid)
             self.ended = True
         elif msg.result != k_ERemoteDeviceAuthorizationInProgress:
             self.ended = True

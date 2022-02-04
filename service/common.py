@@ -21,12 +21,17 @@ pkt_types: dict[int, type[Message]] = {
 }
 
 
+def _load_bytes(file: str, size: int) -> bytes:
+    with open(file) as f:
+        s = f.read(size * 2)
+        if len(s) == size * 2:
+            return bytes.fromhex(s)
+    raise IOError('Bytes not valid')
+
+
 def _obtain_random_bytes(file: str, size: int) -> bytes:
     try:
-        with open(file) as f:
-            s = f.read(size * 2)
-            if len(s) == size * 2:
-                return bytes.fromhex(s)
+        return _load_bytes(file, size)
     except IOError:
         pass
     value = secrets.token_bytes(size)
@@ -44,7 +49,15 @@ def _save_bytes(file, value):
 
 
 def get_device_id() -> int:
-    return int.from_bytes(_obtain_random_bytes('../.client/device_id.txt', 8), byteorder='little', signed=False)
+    return int.from_bytes(_obtain_random_bytes('.client/device_id.txt', 8), byteorder='big', signed=False)
+
+
+def get_steamid() -> int:
+    return _load_bytes('.client/steamid.txt', 8)
+
+
+def set_steamid(steamid: int):
+    return _save_bytes('.client/steamid.txt', steamid.to_bytes(8, byteorder='big', signed=False))
 
 
 def get_secret_key() -> bytes:
