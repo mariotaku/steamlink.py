@@ -12,10 +12,10 @@ PACKET_CONTAINS_ONLY_1_MSG         yes
 
 MSG_SUMMARY_SUBSIDIARY_FIELD_NAMES     packetId controlMessageType
 
-MSG_HEADER_TYPE                        T_msg_header_type
+MSG_HEADER_TYPE                        TStreamPacketHeader
 MSG_HEADER_LENGTH                      13
 MSG_ID_FIELD_NAME                      type
-MSG_MAIN_TYPE                          T_msg_main_type
+MSG_MAIN_TYPE                          TStreamPacket
 
 PROTO_TYPE_DEFINITIONS
 
