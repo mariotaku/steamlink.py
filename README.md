@@ -18,4 +18,12 @@
 
 ## Opening Stream
 
+### Packet Type: Connect
+
+```
+has_crc = false
+type = 1
+payload = crc32c(b'Connect')
+```
+
 (not started yet...)

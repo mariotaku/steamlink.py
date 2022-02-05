@@ -1,0 +1,22 @@
+# Protocol's names.
+PROTONAME         Steam In-Home Streaming Session
+PROTOSHORTNAME    STEAMSESSION
+PROTOABBREV       steam_ihs_session
+
+# Specify when the dissector is used.
+PARENT_SUBFIELD          udp.port
+PARENT_SUBFIELD_VALUES   27031
+
+PACKET_CONTAINS_ONLY_COMPLETE_MSG  yes
+PACKET_CONTAINS_ONLY_1_MSG         yes
+
+MSG_SUMMARY_SUBSIDIARY_FIELD_NAMES     packetId
+
+MSG_HEADER_TYPE                        T_msg_header_type
+MSG_HEADER_LENGTH                      13
+MSG_ID_FIELD_NAME                      type
+MSG_MAIN_TYPE                          T_msg_main_type
+
+PROTO_TYPE_DEFINITIONS
+
+include  steam_ihs_session.fdesc ;

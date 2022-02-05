@@ -1,0 +1,48 @@
+enum7 E_stream_packet_type
+{
+    unconnected          0
+    connect              1
+    connect_ack          2
+    unreliable           3
+    unreliable_frag      4
+    reliable             5
+    reliable_frag        6
+    ack                  7
+    nack                 8
+    disconnect           9
+}
+
+struct T_msg_header_type
+{
+  byte_order                    little_endian;
+  bool1                         has_crc;
+  E_stream_packet_type          type;
+  uint8                         retransmitCount;
+  uint8                         srcConnId;
+  uint8                         dstConnId;
+  uint8                         channelId;
+  int16                         fragmentId;
+  uint16                        packetId;
+  uint32                        sendTimestamp;
+}
+
+struct T_msg_main_type
+{
+  T_msg_header_type             "";
+  save_position                 payload_start;
+  hide raw(*)                   payload_with_optional_crc;
+  save_position                 payload_end;
+  if                            (has_crc)
+  {
+    goto_position               payload_start;
+    var int32                   payload_size = (payload_end - payload_start) / 8 - 4;
+    raw(payload_size)           payload;
+    uint32                      crc32;
+  }
+  else
+  {
+    goto_position               payload_start;
+    var int32                   payload_size = (payload_end - payload_start) / 8;
+    raw(payload_size)           payload;
+  }
+}
