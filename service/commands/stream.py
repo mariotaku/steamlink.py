@@ -1,15 +1,12 @@
-import os
 import subprocess
 import sys
 
-import secrets
-
 import asyncio
+import secrets
 from google.protobuf.message import Message
-from os import environ
 
 from protobuf.steammessages_remoteclient_discovery_pb2 import CMsgRemoteClientBroadcastStatus, \
-    ERemoteClientBroadcastMsg, k_ERemoteDeviceStreamingRequest, \
+    k_ERemoteDeviceStreamingRequest, \
     k_ERemoteDeviceStreamingResponse, k_ERemoteDeviceProofRequest, k_ERemoteDeviceStreamingInProgress, \
     k_ERemoteDeviceStreamingSuccess, CMsgRemoteClientBroadcastHeader, k_ERemoteDeviceProofResponse, \
     CMsgRemoteDeviceProofResponse, EStreamTransport
@@ -45,7 +42,7 @@ class StreamCommand(CliCommand):
             args = ['--sdr_config', sdr_config_path, '--burst', '150000', '--captureres', '1920x1080',
                     '--performance-icons', '--performance-overlay', '--enable-microphone',
                     '--transport', transport, '--steamid', str(get_steamid()),
-                    '--server', server, session_key[0:16].hex()]
+                    '--server', server, session_key.hex()]
             env = {
                 'LD_LIBRARY_PATH': ld_library_path,
                 'XDG_RUNTIME_DIR': '/run/user/1000'

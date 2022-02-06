@@ -12,6 +12,13 @@ enum7 EStreamPacketType
     disconnect           9
 }
 
+enum8 EStreamChannel {
+    Discovery            0
+    Control              1
+    Stats                2
+    DataChannelStart     3
+}
+
 enum8 EStreamControlMessage {
     AuthenticationRequest                                       1
     AuthenticationResponse                                      2
@@ -111,7 +118,7 @@ struct TStreamPacketHeader
     uint8                           retransmitCount;
     uint8                           srcConnId;
     uint8                           dstConnId;
-    uint8                           channelId;
+    EStreamChannel                  channel;
     int16                           fragmentId;
     uint16                          packetId;
     uint32                          sendTimestamp;
@@ -129,7 +136,7 @@ switch TStreamPayload
             EStreamControlMessage                               controlMessageType;
             set                                                 payload_size = payload_size - 1;
         }
-        if                                                      (channelId > 2 && controlMessageType == AuthenticationRequest && payloadSize >= 12)
+        if                                                      (channel >= EStreamChannel::DataChannelStart && controlMessageType == AuthenticationRequest && payloadSize >= 12)
         {
             uint16                                              frameId;
             uint32                                              frameTimestamp;

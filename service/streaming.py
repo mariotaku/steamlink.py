@@ -1,8 +1,8 @@
 from google.protobuf.message import Message
 
 from protobuf.steammessages_remoteclient_discovery_pb2 import CMsgRemoteDeviceStreamingRequest, \
-    k_EStreamDeviceFormFactorTV, k_EStreamInterfaceDefault, k_EStreamTransportUDP, k_EStreamInterfaceDesktop, \
-    k_EStreamTransportUDPRelay, k_EStreamTransportSDR
+    k_EStreamDeviceFormFactorTV, k_EStreamInterfaceDefault, k_EStreamTransportUDP, k_EStreamTransportUDPRelay, \
+    k_EStreamTransportSDR
 from service.common import get_device_id, device_token, get_secret_key
 
 
@@ -21,7 +21,7 @@ def streaming_req(request_id: int, client_id: int) -> Message:
     # message.gamepad_count = 1
     # message.gamepads.append(CMsgRemoteDeviceStreamingRequest.ReservedGamepad(controller_type=2, controller_subtype=1))
     message.stream_desktop = True
-    message.stream_interface = k_EStreamInterfaceDesktop
+    message.stream_interface = k_EStreamInterfaceDefault
     message.supported_transport.extend([k_EStreamTransportUDP, k_EStreamTransportUDPRelay, k_EStreamTransportSDR])
     message.restricted = False
     message.device_token = device_token(get_device_id(), get_secret_key())
