@@ -1,6 +1,3 @@
-import subprocess
-import sys
-
 import asyncio
 import secrets
 from google.protobuf.message import Message
@@ -9,14 +6,11 @@ from protobuf.steammessages_remoteclient_discovery_pb2 import CMsgRemoteClientBr
     k_ERemoteDeviceStreamingRequest, \
     k_ERemoteDeviceStreamingResponse, k_ERemoteDeviceProofRequest, k_ERemoteDeviceStreamingInProgress, \
     k_ERemoteDeviceStreamingSuccess, CMsgRemoteClientBroadcastHeader, k_ERemoteDeviceProofResponse, \
-    CMsgRemoteDeviceProofResponse, EStreamTransport
+    CMsgRemoteDeviceProofResponse
 from service import streaming, ccrypto
 from service.commands.base import CliCommand
-from service.common import ServiceProtocol, get_secret_key, get_steamid
-
-streaming_client = '/home/pi/.local/share/SteamLink/bin/streaming_client'
-ld_library_path = '/home/pi/.local/share/SteamLink/lib'
-sdr_config_path = '/home/pi/.local/share/Valve Corporation/SteamLink/sdr_config.txt'
+from service.common import ServiceProtocol, get_secret_key
+from session.client import session_run
 
 
 class StreamCommand(CliCommand):
@@ -36,21 +30,9 @@ class StreamCommand(CliCommand):
             self.send_message(k_ERemoteDeviceStreamingRequest, message, (self.ip, self.host.connect_port))
             await asyncio.sleep(1)
         if self.streaming_info:
-            transport = EStreamTransport.Name(self.streaming_info.transport)
-            server = f'{self.ip}:{self.streaming_info.port}'
             session_key = ccrypto.symmetric_decrypt(self.streaming_info.encrypted_session_key, get_secret_key())
-            args = ['--sdr_config', sdr_config_path, '--burst', '150000', '--captureres', '1920x1080',
-                    '--performance-icons', '--performance-overlay', '--enable-microphone',
-                    '--transport', transport, '--steamid', str(get_steamid()),
-                    '--server', server, session_key.hex()]
-            env = {
-                'LD_LIBRARY_PATH': ld_library_path,
-                'XDG_RUNTIME_DIR': '/run/user/1000'
-            }
-            print(f'Run with options: {" ".join(args)}')
-            proc = await asyncio.create_subprocess_exec(streaming_client, *args, env=env, stdin=subprocess.PIPE,
-                                                        stdout=sys.stderr, stderr=sys.stderr)
-            print(f'client exited with code {await proc.wait()}')
+            retval = await session_run(self.ip, self.streaming_info.port, self.streaming_info.transport, session_key)
+            print(f'client exited with code {retval}')
 
     def gen_proof_response(self, challenge: bytes) -> Message:
         encrypted = ccrypto.symmetric_encrypt(challenge, get_secret_key())

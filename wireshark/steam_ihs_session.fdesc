@@ -19,6 +19,11 @@ enum8 EStreamChannel {
     DataChannelStart     3
 }
 
+enum8 EStreamDiscoveryMessage {
+    PingRequest             1
+    PingResponse            2
+}
+
 enum8 EStreamControlMessage {
     AuthenticationRequest                                       1
     AuthenticationResponse                                      2
@@ -130,6 +135,10 @@ switch TStreamPayload
         uint32{de=print("crc32c('Connect')")}                   payload;
     case EStreamPacketType::connect_ack :
         uint32                                                  timestamp;
+    case EStreamPacketType::unconnected :
+        EStreamDiscoveryMessage                                 discoveryMessageType;
+        set                                                     payload_size = payload_size - 1;
+        raw(payload_size)                                       payload;
     case EStreamPacketType::reliable :
         if                                                      (payload_size > 0 && fragmentId == 0)
         {
