@@ -1,23 +1,26 @@
+import errno
+import socket
 import struct
 import subprocess
 import sys
 import time
-from asyncio import DatagramTransport
-from concurrent.futures import Future
+from concurrent.futures import ThreadPoolExecutor
 
 import asyncio
 import crc32c
 import secrets
 from google.protobuf.message import Message, DecodeError
 
-from protobuf.steammessages_remoteclient_discovery_pb2 import EStreamTransport
+from protobuf.steammessages_remoteclient_discovery_pb2 import EStreamTransport, k_EStreamDeviceFormFactorTV
 from protobuf.steammessages_remoteplay_pb2 import k_EStreamChannelDiscovery, k_EStreamChannelControl, \
     k_EStreamControlAuthenticationResponse, CAuthenticationResponseMsg, CNegotiationInitMsg, \
     k_EStreamControlNegotiationInit, CNegotiationSetConfigMsg, k_EStreamControlNegotiationSetConfig, \
     k_EStreamControlNegotiationComplete, CNegotiationCompleteMsg, k_EStreamControlAuthenticationRequest, \
     CAuthenticationRequestMsg, k_EStreamControlClientHandshake, CClientHandshakeMsg, CStreamingClientHandshakeInfo, \
     k_EStreamControlServerHandshake, k_EStreamDiscoveryPingRequest, \
-    CDiscoveryPingRequest, CDiscoveryPingResponse, k_EStreamDiscoveryPingResponse, CServerHandshakeMsg
+    CDiscoveryPingRequest, CDiscoveryPingResponse, k_EStreamDiscoveryPingResponse, CServerHandshakeMsg, \
+    CNegotiatedConfig, CStreamVideoMode, CStreamingClientConfig, CStreamingClientCaps, k_EStreamAudioCodecOpus, \
+    k_EStreamVideoCodecH264, k_EStreamVideoCodecHEVC, k_EStreamVersionCurrent
 from service.common import get_steamid
 from session.frame import frame_should_encrypt, frame_encrypt, frame_decrypt, frame_hmac256, frame_timestamp_from_secs
 
@@ -26,20 +29,7 @@ ld_library_path = '/home/pi/.local/share/SteamLink/lib'
 sdr_config_path = '/home/pi/.local/share/Valve Corporation/SteamLink/sdr_config.txt'
 
 
-async def session_run(ip: str, port: int, transport: int, session_key: bytes) -> int:
-    # return await session_run_shell(ip, port, transport, session_key)
-    loop = asyncio.get_event_loop()
-    cond = loop.create_future()
-    transport, protocol = await loop.create_datagram_endpoint(lambda: SessionProtocol((ip, port), session_key, cond),
-                                                              local_addr=('0.0.0.0', 0))
-    try:
-        await cond
-    finally:
-        transport.close()
-    return 0
-
-
-async def session_run_shell(ip, port, transport, session_key):
+async def session_run_command(ip: str, port: int, transport: int, session_key: bytes) -> int:
     transport_name = EStreamTransport.Name(transport)
     server = f'{ip}:{port}'
     args = ['--sdr_config', sdr_config_path, '--burst', '150000', '--captureres', '1920x1080',
@@ -56,8 +46,30 @@ async def session_run_shell(ip, port, transport, session_key):
     return await proc.wait()
 
 
-class SessionProtocol(asyncio.DatagramProtocol):
-    transport: DatagramTransport
+async def session_run(ip: str, port: int, transport: int, session_key: bytes) -> int:
+    loop = asyncio.get_event_loop()
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        await loop.run_in_executor(executor, lambda: session_worker((ip, port), session_key))
+
+
+def session_worker(host_address: tuple[str, int], auth_token: bytes):
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setblocking(False)
+    worker = SessionWorker(sock, host_address, auth_token)
+    while not worker.closed:
+        try:
+            data, _ = sock.recvfrom(2048)
+        except socket.error as e:
+            err = e.args[0]
+            if err == errno.EAGAIN or err == errno.EWOULDBLOCK:
+                continue
+            else:
+                raise e
+        else:
+            worker.handle_packet(data)
+
+
+class SessionWorker:
     msg_types: dict[int, type[Message]] = {
         k_EStreamControlServerHandshake: CServerHandshakeMsg,
         k_EStreamControlAuthenticationResponse: CAuthenticationResponseMsg,
@@ -66,17 +78,19 @@ class SessionProtocol(asyncio.DatagramProtocol):
         k_EStreamControlNegotiationComplete: CNegotiationCompleteMsg,
     }
 
-    def __init__(self, addr: tuple[str, int], auth_token: bytes, cond: Future):
-        super().__init__()
+    def __init__(self, sock: socket.socket, addr: tuple[str, int], auth_token: bytes):
+        self.sock = sock
+        self.closed = False
         self.addr = addr
         self.auth_token = auth_token
-        self.cond = cond
-        self.src_conn_id = 0
+        self.src_conn_id = 1 + secrets.randbelow(255)
         self.dst_conn_id = 0
         self.connect_timestamp = 0
         self.send_encrypt_sequence = 0
         self.recv_decrypt_sequence = 0
         self.sent_packets = set[int]()
+        self.send_packet(False, 1, self.next_pkt_id(), k_EStreamChannelDiscovery,
+                         int.to_bytes(crc32c.crc32c(b'Connect'), 4, byteorder='little', signed=False))
 
     def next_pkt_id(self) -> int:
         for i in range(0, 65536):
@@ -85,12 +99,6 @@ class SessionProtocol(asyncio.DatagramProtocol):
                 break
         self.sent_packets.add(pkt_id)
         return pkt_id
-
-    def connection_made(self, transport: DatagramTransport) -> None:
-        self.transport = transport
-        self.src_conn_id = 1 + secrets.randbelow(255)
-        self.send_packet(False, 1, self.next_pkt_id(), k_EStreamChannelDiscovery,
-                         int.to_bytes(crc32c.crc32c(b'Connect'), 4, byteorder='little', signed=False))
 
     def frame_timestamp(self):
         return frame_timestamp_from_secs(time.clock_gettime(time.CLOCK_MONOTONIC))
@@ -110,9 +118,11 @@ class SessionProtocol(asyncio.DatagramProtocol):
             packet += bytes([0xFE for _ in range(0, pad_to - len(packet))])
         if has_crc:
             packet += struct.pack('<1I', crc32c.crc32c(packet))
-        self.transport.sendto(packet, self.addr)
+        self.sock.sendto(packet, self.addr)
 
     def send_reliable(self, channel: int, msg_type: int, message: Message):
+        if channel == k_EStreamChannelControl:
+            print(f'CStreamClient::SendControlMessage {msg_type}')
         if channel == k_EStreamChannelControl and frame_should_encrypt(msg_type):
             payload = frame_encrypt(message.SerializeToString(), self.auth_token, self.send_encrypt_sequence)
             self.send_encrypt_sequence += 1
@@ -121,7 +131,7 @@ class SessionProtocol(asyncio.DatagramProtocol):
         self.send_packet(True, 5, self.next_pkt_id(), channel,
                          int.to_bytes(msg_type, 1, byteorder='little', signed=False) + payload)
 
-    def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
+    def handle_packet(self, data: bytes):
         offset = 0
         type_and_crc, = struct.unpack_from('<B', data, offset)
         pkt_type = type_and_crc & 0x7F
@@ -186,7 +196,6 @@ class SessionProtocol(asyncio.DatagramProtocol):
         if pkt_id not in self.sent_packets:
             return
         self.sent_packets.remove(pkt_id)
-        print(f'packet {pkt_id} returned ack')
 
     def on_nack(self, pkt_id: int, timestamp: int):
         if pkt_id not in self.sent_packets:
@@ -212,17 +221,60 @@ class SessionProtocol(asyncio.DatagramProtocol):
             return
         self.send_ack(pkt_id, channel)
         if msg_type == k_EStreamControlServerHandshake:
-            self.on_server_handshake()
+            self.on_server_handshake(message)
+        elif msg_type == k_EStreamControlAuthenticationResponse:
+            self.on_auth_response(message)
+        elif msg_type == k_EStreamControlNegotiationInit:
+            self.on_negotiation_init(message)
         else:
-            print(f'{msg_type}: {message}')
+            print(f'unhandled {msg_type}: {message}')
 
-    def on_server_handshake(self):
-        message = CAuthenticationRequestMsg(version=1, steamid=get_steamid(),
+    def on_server_handshake(self, message: Message):
+        print(f'server handshake, mtu={message.info.mtu}')
+        out_msg = CAuthenticationRequestMsg(version=k_EStreamVersionCurrent, steamid=get_steamid(),
                                             token=frame_hmac256(b'Steam In-Home Streaming', self.auth_token))
-        self.send_reliable(k_EStreamChannelControl, k_EStreamControlAuthenticationRequest, message)
+        self.send_reliable(k_EStreamChannelControl, k_EStreamControlAuthenticationRequest, out_msg)
+
+    def on_auth_response(self, message: Message):
+        print(f'auth response {message}')
+
+    def on_negotiation_init(self, message: Message):
+        config = CNegotiatedConfig(reliable_data=message.reliable_data)
+        for codec in message.supported_audio_codecs:
+            if codec in [k_EStreamAudioCodecOpus]:
+                config.selected_audio_codec = codec
+        for codec in message.supported_video_codecs:
+            if codec in [k_EStreamVideoCodecH264, k_EStreamVideoCodecHEVC]:
+                config.selected_video_codec = codec
+        config.available_video_modes.extend([CStreamVideoMode(width=1920, height=1080,
+                                                              refresh_rate_numerator=5994,
+                                                              refresh_rate_denominator=100)])
+        config.enable_remote_hid = True
+        config.enable_touch_input = True
+        client_cfg = CStreamingClientConfig()
+        client_cfg.maximum_resolution_x = 0
+        client_cfg.maximum_resolution_y = 0
+        client_cfg.enable_hardware_decoding = True
+        client_cfg.enable_performance_overlay = True
+        client_cfg.enable_audio_streaming = True
+        client_cfg.enable_performance_icons = True
+        client_cfg.enable_microphone_streaming = True
+        # client_cfg.enable_video_hevc = True
+
+        client_caps = CStreamingClientCaps()
+        client_caps.system_info = "\"SystemInfo\"\n{\n\t\"OSType\"\t\t\"-197\"\n\t\"CPUID\"\t\t\"ARM\"\n\t\"CPUGhz\"\t\t\"0.000000\"\n\t\"PhysicalCPUCount\"\t\"1\"\n\t\"LogicalCPUCount\"\t\"1\"\n\t\"SystemRAM\"\t\t\"263\"\n\t\"VideoVendorID\"\t\"0\"\n\t\"VideoDeviceID\"\t\"0\"\n\t\"VideoRevision\"\t\"0\"\n\t\"VideoRAM\"\t\t\"0\"\n\t\"VideoDisplayX\"\t\"1920\"\n\t\"VideoDisplayY\"\t\"1080\"\n\t\"VideoDisplayNameID\"\t\"JN-MD133BFHDR\"\n}\n"
+        client_caps.system_can_suspend = True
+        client_caps.supports_video_hevc = False
+        client_caps.maximum_decode_bitrate_kbps = 30000
+        client_caps.maximum_burst_bitrate_kbps = 90000
+        client_caps.form_factor = k_EStreamDeviceFormFactorTV
+
+        out_msg = CNegotiationSetConfigMsg(config=config, streaming_client_config=client_cfg,
+                                           streaming_client_caps=client_caps)
+        self.send_reliable(k_EStreamChannelControl, k_EStreamControlNegotiationSetConfig, out_msg)
 
     def on_disconnect(self):
-        self.cond.set_result(True)
+        self.closed = True
 
     def send_unconnected(self, msg_type: int, payload: bytes, pad_to: int):
         type_bytes = int.to_bytes(msg_type, 1, byteorder='little', signed=False)

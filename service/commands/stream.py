@@ -10,7 +10,7 @@ from protobuf.steammessages_remoteclient_discovery_pb2 import CMsgRemoteClientBr
 from service import streaming, ccrypto
 from service.commands.base import CliCommand
 from service.common import ServiceProtocol, get_secret_key
-from session.client import session_run
+from session.client import session_run, session_run_command
 
 
 class StreamCommand(CliCommand):

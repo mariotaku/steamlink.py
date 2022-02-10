@@ -157,7 +157,7 @@ switch TStreamPayload
             uint32                                              inputRecvTimestamp;
             set                                                 payload_size = payload_size - 12;
         }
-        subproto(payload_size){dissector=protobuf}              payload;
+        raw(payload_size)                                       payload;
     default :
         raw(payload_size)                                       payload;
 }

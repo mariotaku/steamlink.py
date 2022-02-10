@@ -11,6 +11,7 @@ def frame_should_encrypt(msg_type: int) -> bool:
 
 
 def frame_encrypt(data: bytes, key: bytes, sequence: int) -> bytes:
+    print(f"BEncrypt with key[{len(key)}], len={len(data)}, seq={sequence}")
     plain = int.to_bytes(sequence, 8, byteorder='little', signed=False) + data
     iv = HMAC.new(key, plain, MD5).digest()
     return iv + ccrypto.symmetric_encrypt_with_iv(plain, iv, key, False)
