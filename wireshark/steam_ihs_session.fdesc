@@ -135,10 +135,14 @@ switch TStreamPayload
         uint32{de=print("crc32c('Connect')")}                   payload;
     case EStreamPacketType::connect_ack :
         uint32                                                  timestamp;
+    case EStreamPacketType::ack :
+        uint32                                                  timestamp;
     case EStreamPacketType::unconnected :
         EStreamDiscoveryMessage                                 discoveryMessageType;
         set                                                     payload_size = payload_size - 1;
-        raw(payload_size)                                       payload;
+        int32                                                   message_size;
+        subproto(message_size){dissector=protobuf}              message;
+        raw(payload_size - 4 - message_size)                    remaining;
     case EStreamPacketType::reliable :
         if                                                      (payload_size > 0 && fragmentId == 0)
         {

@@ -3,7 +3,7 @@ import secrets
 from google.protobuf.message import Message
 
 from protobuf.steammessages_remoteclient_discovery_pb2 import CMsgRemoteClientBroadcastStatus, \
-    k_ERemoteDeviceAuthorizationRequest, ERemoteClientBroadcastMsg, k_ERemoteDeviceAuthorizationResponse, \
+    k_ERemoteDeviceAuthorizationRequest, k_ERemoteDeviceAuthorizationResponse, \
     k_ERemoteDeviceAuthorizationInProgress, k_ERemoteDeviceAuthorizationSuccess
 from service import pairing, common
 from service.commands.base import CliCommand

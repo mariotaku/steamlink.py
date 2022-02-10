@@ -21,6 +21,12 @@ class ArgumentParser(argparse.ArgumentParser):
         raise Exception(message)
 
 
+def exception_handler(loop: asyncio.AbstractEventLoop, context: dict[str]):
+    loop.default_exception_handler(context)
+    # ex = context.get('exception')
+    loop.stop()
+
+
 async def ainput(string: str) -> str:
     await asyncio.get_event_loop().run_in_executor(
         None, lambda s=string: sys.stdout.write(s + ' '))
@@ -111,7 +117,8 @@ class ServiceProtocolImpl(ServiceProtocol):
 
 
 if __name__ == '__main__':
-    loop = asyncio.get_event_loop()
-    t = loop.create_datagram_endpoint(ServiceProtocolImpl, local_addr=('0.0.0.0', 0), allow_broadcast=True)
-    loop.run_until_complete(t)
-    loop.run_forever()
+    main_loop = asyncio.get_event_loop()
+    main_loop.set_exception_handler(exception_handler)
+    t = main_loop.create_datagram_endpoint(ServiceProtocolImpl, local_addr=('0.0.0.0', 0), allow_broadcast=True)
+    main_loop.run_until_complete(t)
+    main_loop.run_forever()

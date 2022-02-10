@@ -62,7 +62,7 @@ def get_device_id() -> int:
 
 
 def get_steamid() -> int:
-    return _load_bytes(_config_path('steamid.txt'), 8)
+    return int.from_bytes(_load_bytes(_config_path('steamid.txt'), 8), byteorder='big', signed=False)
 
 
 def set_steamid(steamid: int):
