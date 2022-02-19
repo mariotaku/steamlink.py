@@ -1,6 +1,5 @@
 import argparse
 import sys
-import traceback
 from asyncio import DatagramTransport
 
 import asyncio
@@ -36,11 +35,16 @@ async def ainput(string: str) -> str:
 
 class ServiceProtocolImpl(ServiceProtocol):
     discovered: [str, tuple[Message, Message]] = {}
+    commands: [str, type[CliCommand]] = {
+        'stream': StreamCommand,
+        's': StreamCommand,
+        'pair': PairCommand,
+        'p': PairCommand,
+    }
     command: CliCommand = None
 
     def __init__(self):
         super().__init__()
-        self.parser = self.setup_argparser()
         asyncio.get_event_loop().create_task(self.read_command())
         self.seq_num = 0
 
@@ -82,22 +86,18 @@ class ServiceProtocolImpl(ServiceProtocol):
         self.command = PairCommand(self, args.ip, host)
         await self.command.run()
 
-    async def stream(self, args):
-        header, host = self.discovered.get(args.ip, (None, None))
-        if not host:
-            print('Host info not available')
-            return
-        self.command = StreamCommand(self, args.ip, header, host)
-        await self.command.run()
-
     async def read_command(self):
         while True:
-            try:
-                args = self.parser.parse_args((await ainput('>')).strip().split(' '))
-                if args.action:
-                    await args.action(args)
-            except:
-                traceback.print_exc()
+            args = (await ainput('>')).strip().split(' ')
+            command_type = self.commands.get(args[0], None)
+            if not command_type:
+                print(f'Unrecognized command {args[0]}.')
+                continue
+            command: CliCommand = command_type(self)
+            if not command.parse_args(args[1:]):
+                continue
+            self.command = command
+            await command.run()
 
     def setup_argparser(self) -> argparse.ArgumentParser:
         parser = ArgumentParser(prog='', description='CLI shell', add_help=False, exit_on_error=False)
@@ -110,15 +110,12 @@ class ServiceProtocolImpl(ServiceProtocol):
         pair = subparsers.add_parser('pair')
         pair.set_defaults(action=self.pair)
         pair.add_argument('ip', type=str)
-        stream = subparsers.add_parser('stream')
-        stream.set_defaults(action=self.stream)
-        stream.add_argument('ip', type=str)
         return parser
 
 
 if __name__ == '__main__':
     main_loop = asyncio.get_event_loop()
-    main_loop.set_exception_handler(exception_handler)
+    # main_loop.set_exception_handler(exception_handler)
     t = main_loop.create_datagram_endpoint(ServiceProtocolImpl, local_addr=('0.0.0.0', 0), allow_broadcast=True)
     main_loop.run_until_complete(t)
     main_loop.run_forever()

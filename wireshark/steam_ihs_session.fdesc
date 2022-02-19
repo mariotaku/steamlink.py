@@ -13,10 +13,15 @@ enum7 EStreamPacketType
 }
 
 enum8 EStreamChannel {
-    Discovery            0
-    Control              1
-    Stats                2
-    DataChannelStart     3
+    Discovery                                                   0
+    Control                                                     1
+    Stats                                                       2
+    DataChannel1                                                3
+    DataChannel2                                                4
+    DataChannel3                                                5
+    DataChannel4                                                6
+    DataChannel5                                                7
+    DataChannel6                                                8
 }
 
 enum8 EStreamDiscoveryMessage {
@@ -115,6 +120,20 @@ enum8 EStreamControlMessage {
     SetBitrateOverride                                          135
 }
 
+enum8 EStreamDataMessage {
+    Packet                                                      1
+    Lost                                                        2
+}
+
+enum8 EStreamStatsMessage {
+    FrameEvents                                                 1
+    DebugDump                                                   2
+    LogMessage                                                  3
+    LogUploadBegin                                              4
+    LogUploadData                                               5
+    LogUploadComplete                                           6
+}
+
 struct TStreamPacketHeader
 {
     byte_order                      little_endian;
@@ -127,6 +146,21 @@ struct TStreamPacketHeader
     int16                           fragmentId;
     uint16                          packetId;
     uint32                          sendTimestamp;
+}
+
+switch TStreamControlMessage
+{
+    case EStreamControlMessage::AuthenticationRequest :
+        subproto(payload_size){dissector=protobuf}              message;
+    case EStreamControlMessage::AuthenticationResponse :
+        subproto(payload_size){dissector=protobuf}              message;
+    case EStreamControlMessage::ClientHandshake :
+        subproto(payload_size){dissector=protobuf}              message;
+    case EStreamControlMessage::ServerHandshake :
+        subproto(payload_size){dissector=protobuf}              message;
+    default :
+        raw(16)                                                 iv;
+        raw(payload_size - 16)                                  encrypted;
 }
 
 switch TStreamPayload
@@ -144,12 +178,23 @@ switch TStreamPayload
         subproto(message_size){dissector=protobuf}              message;
         raw(payload_size - 4 - message_size)                    remaining;
     case EStreamPacketType::reliable :
-        if                                                      (payload_size > 0 && fragmentId == 0)
+        switch (channel)
         {
-            EStreamControlMessage                               controlMessageType;
-            set                                                 payload_size = payload_size - 1;
+            case EStreamChannel::Control :
+                EStreamControlMessage                           payloadType;
+                set                                             payload_size = payload_size - 1;
+                TStreamControlMessage(payloadType)              "";
+            case EStreamChannel::Stats :
+                EStreamStatsMessage                             payloadType;
+                set                                             payload_size = payload_size - 1;
+                subproto(payload_size){dissector=protobuf}      message;
+            default :
+                raw(payload_size)                               payload;
         }
-        if                                                      (channel >= EStreamChannel::DataChannelStart && controlMessageType == AuthenticationRequest && payloadSize >= 12)
+    case EStreamPacketType::unreliable :
+        uint8                                                   messageType;
+        set                                                     payload_size = payload_size - 1;
+        if                                                      (messageType == EStreamDataMessage::Lost && payload_size >= 12)
         {
             uint16                                              frameId;
             uint32                                              frameTimestamp;

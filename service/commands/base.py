@@ -8,6 +8,9 @@ class CliCommand:
     def __init__(self, protocol: ServiceProtocol):
         self.protocol = protocol
 
+    def parse_args(self, args: list[str]) -> bool:
+        pass
+
     async def run(self):
         pass
 

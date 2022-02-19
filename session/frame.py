@@ -1,8 +1,14 @@
+import queue
+from queue import Queue
+
 from Crypto.Hash import HMAC, MD5, SHA256
+from dataclasses import dataclass
+from typing import Optional, Dict
 
 from protobuf.steammessages_remoteplay_pb2 import k_EStreamControlAuthenticationResponse, \
     k_EStreamControlAuthenticationRequest, k_EStreamControlServerHandshake, k_EStreamControlClientHandshake
 from service import ccrypto
+from session.packet import PacketHeader, Packet, PacketType
 
 
 def frame_should_encrypt(msg_type: int) -> bool:
@@ -11,7 +17,6 @@ def frame_should_encrypt(msg_type: int) -> bool:
 
 
 def frame_encrypt(data: bytes, key: bytes, sequence: int) -> bytes:
-    print(f"BEncrypt with key[{len(key)}], len={len(data)}, seq={sequence}")
     plain = int.to_bytes(sequence, 8, byteorder='little', signed=False) + data
     iv = HMAC.new(key, plain, MD5).digest()
     return iv + ccrypto.symmetric_encrypt_with_iv(plain, iv, key, False)
@@ -24,7 +29,8 @@ def frame_decrypt(encrypted: bytes, key: bytes, expect_sequence: int) -> bytes:
     if expect_sequence >= 0:
         actual_sequence = int.from_bytes(plain[:8], byteorder='little', signed=False)
         if expect_sequence != actual_sequence:
-            raise ValueError(f'Expected sequence {expect_sequence}, actual {actual_sequence}')
+            # raise ValueError(f'Expected sequence {expect_sequence}, actual {actual_sequence}')
+            print(f'Expected sequence {expect_sequence}, actual {actual_sequence}')
     return plain[8:]
 
 
@@ -34,3 +40,63 @@ def frame_hmac256(data: bytes, key: bytes) -> bytes:
 
 def frame_timestamp_from_secs(timestamp: float) -> int:
     return int(timestamp * 65536) & 0xFFFFFFFF
+
+
+@dataclass
+class Frame:
+    header: PacketHeader
+    body: bytes
+    completed: bool = True
+    frag_count: int = 0
+
+    def append_packet(self, packet: Packet) -> bool:
+        if self.completed or self.frag_count != packet.header.fragment_id:
+            return False
+        self.body += packet.body
+        self.frag_count += 1
+        if self.frag_count == self.header.fragment_id:
+            self.completed = True
+        return True
+
+
+class FrameAssembler:
+    frame_queue: Queue[Frame] = Queue()
+    temp_frames: Dict[int, Frame] = {}
+
+    def add_packet(self, packet: Packet) -> bool:
+        header = packet.header
+        pkt_type = header.pkt_type
+        if pkt_type in [PacketType.RELIABLE, PacketType.UNRELIABLE]:
+            if header.channel in self.temp_frames:
+                print(
+                    f'Message {packet.body[0]} (retransmit: {header.retransmit_count}) in channel {header.channel} already present in temp_frames')
+                return False
+            frame = Frame(header, packet.body, header.fragment_id == 0)
+            if frame.completed:
+                self.frame_queue.put_nowait(frame)
+            else:
+                self.temp_frames[header.channel] = frame
+        elif pkt_type in [PacketType.RELIABLE_FRAG, PacketType.UNRELIABLE_FRAG]:
+            frame = self.temp_frames.get(header.channel, None)
+            if not frame:
+                print(f'No temp frame found for message in channel {header.channel}')
+                return False
+            elif not frame.append_packet(packet):
+                print(f'Failed to append packet in channel {header.channel}')
+                return False
+            elif frame.completed:
+                self.frame_queue.put_nowait(frame)
+                del self.temp_frames[header.channel]
+        else:
+            assert header.fragment_id == 0, f'Packet {header.pkt_type} has fragment_id {header.fragment_id}'
+            frame = Frame(header, packet.body)
+            if frame.completed:
+                self.frame_queue.put_nowait(frame)
+        return True
+
+    def poll_frame(self) -> Optional[Frame]:
+        try:
+            return self.frame_queue.get_nowait()
+        except queue.Empty:
+            pass
+        return None

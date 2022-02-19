@@ -1,12 +1,13 @@
 import asyncio
 import secrets
+from argparse import ArgumentParser
 from google.protobuf.message import Message
 
 from protobuf.steammessages_remoteclient_discovery_pb2 import CMsgRemoteClientBroadcastStatus, \
     k_ERemoteDeviceStreamingRequest, \
     k_ERemoteDeviceStreamingResponse, k_ERemoteDeviceProofRequest, k_ERemoteDeviceStreamingInProgress, \
     k_ERemoteDeviceStreamingSuccess, CMsgRemoteClientBroadcastHeader, k_ERemoteDeviceProofResponse, \
-    CMsgRemoteDeviceProofResponse
+    CMsgRemoteDeviceProofResponse, k_ERemoteDeviceStreamingFailed
 from service import streaming, ccrypto
 from service.commands.base import CliCommand
 from service.common import ServiceProtocol, get_secret_key
@@ -14,15 +15,35 @@ from session.client import session_run, session_run_command
 
 
 class StreamCommand(CliCommand):
-    def __init__(self, protocol: ServiceProtocol, ip: str, header: CMsgRemoteClientBroadcastHeader,
-                 host: CMsgRemoteClientBroadcastStatus):
+    ip: str
+    header: CMsgRemoteClientBroadcastHeader
+    host: CMsgRemoteClientBroadcastStatus
+    native: bool
+
+    def __init__(self, protocol: ServiceProtocol):
         super().__init__(protocol)
-        self.ip = ip
-        self.header = header
-        self.host = host
+        self.header = None
+        self.host = None
         self.ended = False
         self.request_id = 1 + secrets.randbelow(0x7fffffff)
         self.streaming_info = None
+        self.native = False
+
+    def parse_args(self, argv: list[str]) -> bool:
+        stream = ArgumentParser('stream')
+        stream.add_argument('-n', '--native', dest='native', action='store_true', default=False)
+        stream.add_argument('ip', nargs='?', type=str, default='192.168.4.16')
+        args = stream.parse_args(argv)
+        ip = args.ip
+        header, host = self.protocol.discovered.get(ip, (None, None))
+        if not host:
+            print(f'Host info not available for {ip}')
+            return False
+        self.ip = ip
+        self.header = header
+        self.host = host
+        self.native = args.native
+        return True
 
     async def run(self):
         message = streaming.streaming_req(self.request_id, self.header.client_id)
@@ -31,7 +52,12 @@ class StreamCommand(CliCommand):
             await asyncio.sleep(1)
         if self.streaming_info:
             session_key = ccrypto.symmetric_decrypt(self.streaming_info.encrypted_session_key, get_secret_key())
-            retval = await session_run(self.ip, self.streaming_info.port, self.streaming_info.transport, session_key)
+            if self.native:
+                retval = await session_run_command(self.ip, self.streaming_info.port, self.streaming_info.transport,
+                                                   session_key)
+            else:
+                retval = await session_run(self.ip, self.streaming_info.port, self.streaming_info.transport,
+                                           session_key)
             print(f'client exited with code {retval}')
 
     def gen_proof_response(self, challenge: bytes) -> Message:
@@ -51,9 +77,10 @@ class StreamCommand(CliCommand):
             return True
         if msg_type != k_ERemoteDeviceStreamingResponse:
             return False
-        print(f'message arrived: {msg}')
         if msg.result == k_ERemoteDeviceStreamingSuccess:
             self.streaming_info = msg
+            self.ended = True
+        if msg.result == k_ERemoteDeviceStreamingFailed:
             self.ended = True
         elif msg.result != k_ERemoteDeviceStreamingInProgress:
             self.ended = True
