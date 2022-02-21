@@ -1,6 +1,5 @@
 import errno
 import socket
-import struct
 import subprocess
 import sys
 import time
@@ -9,7 +8,9 @@ from concurrent.futures import ThreadPoolExecutor
 import asyncio
 import crc32c
 import secrets
+import struct
 from google.protobuf.message import Message, DecodeError
+from typing import Optional
 
 from protobuf.steammessages_remoteclient_discovery_pb2 import EStreamTransport, k_EStreamDeviceFormFactorTV
 from protobuf.steammessages_remoteplay_pb2 import k_EStreamChannelDiscovery, k_EStreamChannelControl, \
@@ -24,10 +25,16 @@ from protobuf.steammessages_remoteplay_pb2 import k_EStreamChannelDiscovery, k_E
     CSetTargetBitrateMsg, k_EStreamControlSetTargetBitrate, EStreamControlMessage, k_EStreamControlStartAudioData, \
     CStartAudioDataMsg, k_EStreamControlStartVideoData, k_EStreamControlStopAudioData, CStopAudioDataMsg, \
     CStartVideoDataMsg, CStopVideoDataMsg, k_EStreamControlStopVideoData, k_EStreamControlSetSpectatorMode, \
-    CSetSpectatorModeMsg
+    CSetSpectatorModeMsg, CSetTitleMsg, k_EStreamControlSetTitle, CSetIconMsg, k_EStreamControlSetIcon, \
+    k_EStreamControlSetCursor, CSetCursorMsg, CShowCursorMsg, k_EStreamControlShowCursor, CHideCursorMsg, \
+    k_EStreamControlHideCursor, CGetCursorImageMsg, k_EStreamControlGetCursorImage, CSetCursorImageMsg, \
+    k_EStreamControlSetCursorImage, CDeleteCursorMsg, k_EStreamControlDeleteCursor, k_EStreamControlSetTargetFramerate, \
+    CSetTargetFramerateMsg, CSetKeymapMsg, k_EStreamControlSetKeymap, CSetActivityMsg, k_EStreamControlSetActivity, \
+    k_EStreamControlSetCaptureSize, CSetCaptureSizeMsg, k_EStreamControlVideoEncoderInfo, CVideoEncoderInfoMsg, \
+    k_EStreamDataLost, k_EStreamDataPacket
 from service.common import get_steamid
 from session.frame import frame_should_encrypt, frame_encrypt, frame_decrypt, frame_hmac256, frame_timestamp_from_secs, \
-    FrameAssembler, Frame
+    FrameAssembler, Frame, DataFrameHeader, FRAME_HEADER_LENGTH
 from session.packet import PacketHeader, Packet, PacketType
 
 streaming_client = '/home/pi/.local/share/SteamLink/bin/streaming_client'
@@ -85,12 +92,27 @@ class SessionWorker:
         k_EStreamControlNegotiationComplete: CNegotiationCompleteMsg,
         k_EStreamControlSetQoS: CSetQoSMsg,
         k_EStreamControlSetTargetBitrate: CSetTargetBitrateMsg,
+        k_EStreamControlSetTargetFramerate: CSetTargetFramerateMsg,
+        k_EStreamControlSetTitle: CSetTitleMsg,
+        k_EStreamControlSetIcon: CSetIconMsg,
+        k_EStreamControlShowCursor: CShowCursorMsg,
+        k_EStreamControlHideCursor: CHideCursorMsg,
+        k_EStreamControlSetCursor: CSetCursorMsg,
+        k_EStreamControlGetCursorImage: CGetCursorImageMsg,
+        k_EStreamControlSetCursorImage: CSetCursorImageMsg,
+        k_EStreamControlDeleteCursor: CDeleteCursorMsg,
         k_EStreamControlStartAudioData: CStartAudioDataMsg,
         k_EStreamControlStopAudioData: CStopAudioDataMsg,
         k_EStreamControlStartVideoData: CStartVideoDataMsg,
         k_EStreamControlStopVideoData: CStopVideoDataMsg,
         k_EStreamControlSetSpectatorMode: CSetSpectatorModeMsg,
+        k_EStreamControlSetKeymap: CSetKeymapMsg,
+        k_EStreamControlSetActivity: CSetActivityMsg,
+        k_EStreamControlSetCaptureSize: CSetCaptureSizeMsg,
+        k_EStreamControlVideoEncoderInfo: CVideoEncoderInfoMsg,
     }
+    audio_channel: CStartAudioDataMsg = None
+    video_channel: CStopVideoDataMsg = None
 
     def __init__(self, sock: socket.socket, addr: tuple[str, int], auth_token: bytes):
         self.sock = sock
@@ -120,7 +142,7 @@ class SessionWorker:
     def frame_timestamp(self):
         return frame_timestamp_from_secs(time.clock_gettime(time.CLOCK_MONOTONIC))
 
-    def send_packet(self, has_crc: bool, pkt_type: PacketType, pkt_id: int, channel: int, payload: bytes,
+    def send_packet(self, has_crc: bool, pkt_type: PacketType, pkt_id: int, channel: int, payload: bytes = b'',
                     pad_to: int = 0):
         send_timestamp = self.frame_timestamp()
         header = PacketHeader()
@@ -177,7 +199,6 @@ class SessionWorker:
         while True:
             frame = self.frame_assembler.poll_frame()
             if not frame:
-                # print(f'Not a frame: {header.pkt_type} ({packet.body[0]})')
                 break
             self.handle_frame(frame)
 
@@ -195,13 +216,13 @@ class SessionWorker:
                     message = frame_decrypt(payload[1:], self.auth_token, self.recv_decrypt_sequence)
                 except ValueError as e:
                     raise ValueError(
-                        f'Failed to decode message (frag {header.fragment_id}, len {len(payload)}) {EStreamControlMessage.Name(msg_type)}: {e}')
-                if header.retransmit_count == 0:
-                    print(f'recv_decrypt_sequence incremented for {EStreamControlMessage.Name(msg_type)}')
-                    self.recv_decrypt_sequence += 1
+                        f'Failed to decode message (head {header}) {EStreamControlMessage.Name(msg_type)}: {e}')
+                self.recv_decrypt_sequence += 1
                 self.on_reliable(header.pkt_id, header.channel, msg_type, message)
             else:
                 self.on_reliable(header.pkt_id, header.channel, msg_type, payload[1:])
+        elif header.pkt_type == PacketType.UNRELIABLE:
+            self.on_unreliable(header.pkt_id, header.channel, payload[0], payload[1:])
         elif header.pkt_type == PacketType.ACK:
             self.on_ack(header.pkt_id, int.from_bytes(payload, byteorder='little', signed=False))
         elif header.pkt_type == PacketType.NACK:
@@ -241,9 +262,8 @@ class SessionWorker:
     def on_reliable(self, pkt_id: int, channel: int, msg_type: int, payload: bytes):
         msg_ctor = self.msg_types.get(msg_type, None)
         if not msg_ctor:
-            # print(f'Unrecognized type {EStreamControlMessage.Name(msg_type)}')
+            print(f'Unrecognized type {EStreamControlMessage.Name(msg_type)}')
             return
-        # print(f'Handle type {EStreamControlMessage.Name(msg_type)}')
         message = msg_ctor()
         try:
             message.ParseFromString(payload)
@@ -258,8 +278,61 @@ class SessionWorker:
             self.on_negotiation_init(pkt_id, message)
         elif msg_type == k_EStreamControlNegotiationSetConfig:
             self.on_negotation_set_config(pkt_id, message)
+        elif msg_type == k_EStreamControlShowCursor:
+            # Move cursor location
+            pass
+        elif msg_type == k_EStreamControlSetIcon:
+            # Set app icon
+            pass
+        elif msg_type == k_EStreamControlSetKeymap:
+            # Set keymap
+            pass
+        elif msg_type == k_EStreamControlSetCursor:
+            # Set keymap
+            pass
+        elif msg_type == k_EStreamControlVideoEncoderInfo:
+            # Video encoder info (for display)
+            pass
+        elif msg_type == k_EStreamControlStartAudioData:
+            self.frame_assembler.enable_channel(message.channel)
+            self.audio_channel = message
+            print(f'start audio data {message}')
+        elif msg_type == k_EStreamControlStartVideoData:
+            self.frame_assembler.enable_channel(message.channel)
+            self.video_channel = message
+        elif msg_type == k_EStreamControlStopAudioData:
+            if self.audio_channel:
+                self.frame_assembler.enable_channel(self.audio_channel.channel, enabled=False)
+            self.audio_channel = None
+        elif msg_type == k_EStreamControlStopVideoData:
+            if self.video_channel:
+                self.frame_assembler.enable_channel(self.video_channel.channel, enabled=False)
+            self.video_channel = None
+        elif msg_type == k_EStreamControlSetTitle:
+            print(f'Set title {message.text}')
         else:
             print(f'unhandled {EStreamControlMessage.Name(msg_type)}: {message}')
+            pass
+
+    def on_unreliable(self, pkt_id: int, channel: int, msg_type: int, payload: bytes):
+        if msg_type != k_EStreamDataPacket:
+            return
+        header: Optional[DataFrameHeader] = None
+        if len(payload) > FRAME_HEADER_LENGTH:
+            header = DataFrameHeader.parse(payload)
+            payload = payload[FRAME_HEADER_LENGTH:]
+        if self.audio_channel and self.audio_channel.channel == channel:
+            self.on_audio_data(header, payload)
+        elif self.video_channel and self.video_channel.channel == channel:
+            self.on_video_data(header, payload)
+
+    def on_audio_data(self, header: Optional[DataFrameHeader], payload: bytes):
+        print(f'Audio frame {header}, len={len(payload)}')
+        pass
+
+    def on_video_data(self, header: Optional[DataFrameHeader], payload: bytes):
+        sequence, num1, num2, num3 = struct.unpack('<HBHH', payload[:7])
+        # print(f'Video frame {header}, seq={sequence}, num1={num1}, num2={num2}, num3={num3}, len={len(payload[7:])}')
 
     def on_server_handshake(self, message: CServerHandshakeMsg):
         out_msg = CAuthenticationRequestMsg(version=k_EStreamVersionCurrent, steamid=get_steamid(),
@@ -312,6 +385,9 @@ class SessionWorker:
 
     def on_disconnect(self):
         self.closed = True
+
+    def hangup(self):
+        self.send_packet(True, PacketType.DISCONNECT, self.next_pkt_id(), k_EStreamChannelDiscovery)
 
     def send_unconnected(self, msg_type: int, payload: bytes, pad_to: int):
         type_bytes = int.to_bytes(msg_type, 1, byteorder='little', signed=False)

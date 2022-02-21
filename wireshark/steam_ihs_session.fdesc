@@ -192,9 +192,9 @@ switch TStreamPayload
                 raw(payload_size)                               payload;
         }
     case EStreamPacketType::unreliable :
-        uint8                                                   messageType;
+        EStreamDataMessage                                      messageType;
         set                                                     payload_size = payload_size - 1;
-        if                                                      (messageType == EStreamDataMessage::Lost && payload_size >= 12)
+        if                                                      (channel > EStreamChannel::Stats && messageType == EStreamDataMessage::Packet && payload_size >= 12)
         {
             uint16                                              frameId;
             uint32                                              frameTimestamp;

@@ -67,7 +67,6 @@ class StreamCommand(CliCommand):
     def message_received(self, header: Message, msg: Message, addr: tuple[str, int]) -> bool:
         msg_type = header.msg_type
         if msg_type == k_ERemoteDeviceProofRequest:
-            print(f'device proof request: {msg}')
             if self.request_id == msg.request_id:
                 resp = self.gen_proof_response(msg.challenge)
             else:

@@ -1,14 +1,18 @@
 import queue
+import struct
 from queue import Queue
 
 from Crypto.Hash import HMAC, MD5, SHA256
 from dataclasses import dataclass
-from typing import Optional, Dict
+from typing import Optional, Dict, Tuple, Set
 
 from protobuf.steammessages_remoteplay_pb2 import k_EStreamControlAuthenticationResponse, \
-    k_EStreamControlAuthenticationRequest, k_EStreamControlServerHandshake, k_EStreamControlClientHandshake
+    k_EStreamControlAuthenticationRequest, k_EStreamControlServerHandshake, k_EStreamControlClientHandshake, \
+    k_EStreamChannelDiscovery, k_EStreamChannelControl, k_EStreamChannelStats, k_EStreamChannelDataChannelStart
 from service import ccrypto
 from session.packet import PacketHeader, Packet, PacketType
+
+FRAME_HEADER_LENGTH = 12
 
 
 def frame_should_encrypt(msg_type: int) -> bool:
@@ -29,8 +33,7 @@ def frame_decrypt(encrypted: bytes, key: bytes, expect_sequence: int) -> bytes:
     if expect_sequence >= 0:
         actual_sequence = int.from_bytes(plain[:8], byteorder='little', signed=False)
         if expect_sequence != actual_sequence:
-            # raise ValueError(f'Expected sequence {expect_sequence}, actual {actual_sequence}')
-            print(f'Expected sequence {expect_sequence}, actual {actual_sequence}')
+            raise ValueError(f'Expected sequence {expect_sequence}, actual {actual_sequence}')
     return plain[8:]
 
 
@@ -48,6 +51,7 @@ class Frame:
     body: bytes
     completed: bool = True
     frag_count: int = 0
+    expected_sequence: int = 0
 
     def append_packet(self, packet: Packet) -> bool:
         if self.completed or self.frag_count != packet.header.fragment_id:
@@ -59,13 +63,32 @@ class Frame:
         return True
 
 
+@dataclass
+class DataFrameHeader:
+    id: int
+    timestamp: int
+    input_mark: int
+    input_recv_timestamp: int
+
+    @classmethod
+    def parse(cls, data: bytes):
+        return DataFrameHeader(*struct.unpack('<HIHI', data[:FRAME_HEADER_LENGTH]))
+
+
 class FrameAssembler:
     frame_queue: Queue[Frame] = Queue()
     temp_frames: Dict[int, Frame] = {}
+    packet_headers: Dict[Tuple[int, int, int], PacketHeader] = {}
+    enabled_channels: Set[int] = {k_EStreamChannelDiscovery, k_EStreamChannelControl, k_EStreamChannelStats}
 
     def add_packet(self, packet: Packet) -> bool:
         header = packet.header
         pkt_type = header.pkt_type
+        if header.channel != k_EStreamChannelDiscovery and self.is_packet_handled(header):
+            return False
+        if header.channel not in self.enabled_channels:
+            return False
+        self.add_handled_packet(header)
         if pkt_type in [PacketType.RELIABLE, PacketType.UNRELIABLE]:
             if header.channel in self.temp_frames:
                 print(
@@ -100,3 +123,18 @@ class FrameAssembler:
         except queue.Empty:
             pass
         return None
+
+    def is_packet_handled(self, header: PacketHeader) -> bool:
+        handled = self.packet_headers.get((header.type_and_crc, header.channel, header.pkt_id), None)
+        return handled and header.send_timestamp - handled.send_timestamp < 10000
+
+    def add_handled_packet(self, header: PacketHeader):
+        self.packet_headers[(header.type_and_crc, header.channel, header.pkt_id)] = header
+
+    def enable_channel(self, channel: int, enabled: bool = True):
+        if channel < k_EStreamChannelDataChannelStart:
+            return
+        if enabled:
+            self.enabled_channels.add(channel)
+        else:
+            self.enabled_channels.remove(channel)
