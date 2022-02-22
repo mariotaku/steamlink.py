@@ -1,4 +1,5 @@
 protobuf~=3.19
 pycryptodome~=3.14
 crc32c~=2.2
-PyGObject
+opuslib
+pyalsaaudio

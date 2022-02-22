@@ -1,5 +1,6 @@
 import errno
 import socket
+import struct
 import subprocess
 import sys
 import time
@@ -8,8 +9,9 @@ from concurrent.futures import ThreadPoolExecutor
 import asyncio
 import crc32c
 import secrets
-import struct
+from alsaaudio import PCM as AlsaPCM, PCM_PLAYBACK, PCM_FORMAT_S16_LE, PCM_NORMAL
 from google.protobuf.message import Message, DecodeError
+from opuslib import Decoder as OpusDecoder
 from typing import Optional
 
 from protobuf.steammessages_remoteclient_discovery_pb2 import EStreamTransport, k_EStreamDeviceFormFactorTV
@@ -31,7 +33,7 @@ from protobuf.steammessages_remoteplay_pb2 import k_EStreamChannelDiscovery, k_E
     k_EStreamControlSetCursorImage, CDeleteCursorMsg, k_EStreamControlDeleteCursor, k_EStreamControlSetTargetFramerate, \
     CSetTargetFramerateMsg, CSetKeymapMsg, k_EStreamControlSetKeymap, CSetActivityMsg, k_EStreamControlSetActivity, \
     k_EStreamControlSetCaptureSize, CSetCaptureSizeMsg, k_EStreamControlVideoEncoderInfo, CVideoEncoderInfoMsg, \
-    k_EStreamDataLost, k_EStreamDataPacket
+    k_EStreamDataPacket
 from service.common import get_steamid
 from session.frame import frame_should_encrypt, frame_encrypt, frame_decrypt, frame_hmac256, frame_timestamp_from_secs, \
     FrameAssembler, Frame, DataFrameHeader, FRAME_HEADER_LENGTH
@@ -114,6 +116,9 @@ class SessionWorker:
     audio_channel: CStartAudioDataMsg = None
     video_channel: CStopVideoDataMsg = None
 
+    audio_decoder: OpusDecoder = None
+    audio_sink: AlsaPCM = None
+
     def __init__(self, sock: socket.socket, addr: tuple[str, int], auth_token: bytes):
         self.sock = sock
         self.closed = False
@@ -127,6 +132,7 @@ class SessionWorker:
         self.sent_packets = set[int]()
         self.frame_assembler = FrameAssembler()
         self._next_pkt_id = 0
+        self.audio_executor = ThreadPoolExecutor(max_workers=1)
         self.send_packet(False, PacketType.CONNECT, self.next_pkt_id(), k_EStreamChannelDiscovery,
                          int.to_bytes(crc32c.crc32c(b'Connect'), 4, byteorder='little', signed=False))
 
@@ -296,6 +302,10 @@ class SessionWorker:
         elif msg_type == k_EStreamControlStartAudioData:
             self.frame_assembler.enable_channel(message.channel)
             self.audio_channel = message
+            self.audio_decoder = OpusDecoder(message.frequency, message.channels)
+            self.audio_sink = AlsaPCM(type=PCM_PLAYBACK, mode=PCM_NORMAL, rate=message.frequency,
+                                      channels=message.channels, format=PCM_FORMAT_S16_LE, periodsize=32,
+                                      device='default')
             print(f'start audio data {message}')
         elif msg_type == k_EStreamControlStartVideoData:
             self.frame_assembler.enable_channel(message.channel)
@@ -327,12 +337,14 @@ class SessionWorker:
             self.on_video_data(header, payload)
 
     def on_audio_data(self, header: Optional[DataFrameHeader], payload: bytes):
-        print(f'Audio frame {header}, len={len(payload)}')
-        pass
+        if not self.audio_decoder:
+            return
+        self.audio_executor.submit(lambda: self.audio_sink.write(self.audio_decoder.decode(payload, 480)))
 
     def on_video_data(self, header: Optional[DataFrameHeader], payload: bytes):
-        sequence, num1, num2, num3 = struct.unpack('<HBHH', payload[:7])
-        # print(f'Video frame {header}, seq={sequence}, num1={num1}, num2={num2}, num3={num3}, len={len(payload[7:])}')
+        sequence, flags, num2, num3 = struct.unpack('<HBHH', payload[:7])
+        protected = flags & 0x10
+        encrypted = flags & 0x20
 
     def on_server_handshake(self, message: CServerHandshakeMsg):
         out_msg = CAuthenticationRequestMsg(version=k_EStreamVersionCurrent, steamid=get_steamid(),
@@ -349,7 +361,8 @@ class SessionWorker:
             if codec in [k_EStreamAudioCodecOpus]:
                 config.selected_audio_codec = codec
         for codec in message.supported_video_codecs:
-            if codec in [k_EStreamVideoCodecH264, k_EStreamVideoCodecHEVC]:
+            supported_codecs = [k_EStreamVideoCodecH264, k_EStreamVideoCodecHEVC]
+            if codec in supported_codecs:
                 config.selected_video_codec = codec
         config.available_video_modes.extend([CStreamVideoMode(width=1920, height=1080,
                                                               refresh_rate_numerator=5994,
@@ -364,11 +377,11 @@ class SessionWorker:
         client_cfg.enable_audio_streaming = True
         client_cfg.enable_performance_icons = True
         client_cfg.enable_microphone_streaming = True
-        client_cfg.enable_video_hevc = True
+        # client_cfg.enable_video_hevc = True
 
         client_caps = CStreamingClientCaps()
         client_caps.system_can_suspend = True
-        client_caps.supports_video_hevc = True
+        # client_caps.supports_video_hevc = True
         client_caps.maximum_decode_bitrate_kbps = 30000
         client_caps.maximum_burst_bitrate_kbps = 90000
         client_caps.form_factor = k_EStreamDeviceFormFactorTV
