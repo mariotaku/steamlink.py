@@ -1,14 +1,15 @@
-import queue
 import struct
-from queue import Queue
+import time
 
+import queue
 from Crypto.Hash import HMAC, MD5, SHA256
 from dataclasses import dataclass
-from typing import Optional, Dict, Tuple, Set
+from queue import Queue
+from typing import Optional, Dict, Tuple
 
 from protobuf.steammessages_remoteplay_pb2 import k_EStreamControlAuthenticationResponse, \
     k_EStreamControlAuthenticationRequest, k_EStreamControlServerHandshake, k_EStreamControlClientHandshake, \
-    k_EStreamChannelDiscovery, k_EStreamChannelControl, k_EStreamChannelStats, k_EStreamChannelDataChannelStart
+    k_EStreamChannelDataChannelStart
 from service import ccrypto
 from session.packet import PacketHeader, Packet, PacketType
 
@@ -45,6 +46,10 @@ def frame_timestamp_from_secs(timestamp: float) -> int:
     return int(timestamp * 65536) & 0xFFFFFFFF
 
 
+def frame_timestamp():
+    return frame_timestamp_from_secs(time.clock_gettime(time.CLOCK_MONOTONIC))
+
+
 @dataclass
 class Frame:
     header: PacketHeader
@@ -77,20 +82,17 @@ class DataFrameHeader:
 
 class FrameAssembler:
     frame_queue: Queue[Frame] = Queue()
-    temp_frames: Dict[int, Frame] = {}
-    packet_headers: Dict[Tuple[int, int, int], PacketHeader] = {}
-    enabled_channels: Set[int] = {k_EStreamChannelDiscovery, k_EStreamChannelControl, k_EStreamChannelStats}
+    temp_frame: Optional[Frame] = None
+    packet_headers: Dict[Tuple[int, int], PacketHeader] = {}
 
     def add_packet(self, packet: Packet) -> bool:
         header = packet.header
         pkt_type = header.pkt_type
-        if header.channel != k_EStreamChannelDiscovery and self.is_packet_handled(header):
-            return False
-        if header.channel not in self.enabled_channels:
+        if self.is_packet_handled(header):
             return False
         self.add_handled_packet(header)
         if pkt_type in [PacketType.RELIABLE, PacketType.UNRELIABLE]:
-            if header.channel in self.temp_frames:
+            if self.temp_frame:
                 print(
                     f'Message {packet.body[0]} (retransmit: {header.retransmit_count}) in channel {header.channel} already present in temp_frames')
                 return False
@@ -98,9 +100,9 @@ class FrameAssembler:
             if frame.completed:
                 self.frame_queue.put_nowait(frame)
             else:
-                self.temp_frames[header.channel] = frame
+                self.temp_frame = frame
         elif pkt_type in [PacketType.RELIABLE_FRAG, PacketType.UNRELIABLE_FRAG]:
-            frame = self.temp_frames.get(header.channel, None)
+            frame = self.temp_frame
             if not frame:
                 print(f'No temp frame found for message in channel {header.channel}')
                 return False
@@ -109,7 +111,7 @@ class FrameAssembler:
                 return False
             elif frame.completed:
                 self.frame_queue.put_nowait(frame)
-                del self.temp_frames[header.channel]
+                self.temp_frame = None
         else:
             assert header.fragment_id == 0, f'Packet {header.pkt_type} has fragment_id {header.fragment_id}'
             frame = Frame(header, packet.body)
@@ -125,16 +127,8 @@ class FrameAssembler:
         return None
 
     def is_packet_handled(self, header: PacketHeader) -> bool:
-        handled = self.packet_headers.get((header.type_and_crc, header.channel, header.pkt_id), None)
+        handled = self.packet_headers.get((header.type_and_crc, header.pkt_id), None)
         return handled and header.send_timestamp - handled.send_timestamp < 10000
 
     def add_handled_packet(self, header: PacketHeader):
-        self.packet_headers[(header.type_and_crc, header.channel, header.pkt_id)] = header
-
-    def enable_channel(self, channel: int, enabled: bool = True):
-        if channel < k_EStreamChannelDataChannelStart:
-            return
-        if enabled:
-            self.enabled_channels.add(channel)
-        else:
-            self.enabled_channels.remove(channel)
+        self.packet_headers[(header.type_and_crc, header.pkt_id)] = header

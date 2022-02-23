@@ -60,6 +60,7 @@ class PacketHeader:
 class Packet:
     header: PacketHeader
     body: bytes
+    size: int = -1
     crc_ok: Optional[bool] = None
 
     def serialize(self, pad_to: int = 0) -> bytes:
@@ -78,4 +79,4 @@ class Packet:
         crc_ok = None
         if header.has_crc:
             crc_ok = crc32c(data[:-4]) == int.from_bytes(data[-4:None], byteorder='little', signed=False)
-        return Packet(header, body, crc_ok)
+        return Packet(header, body, len(data) - (4 if header.has_crc else 0), crc_ok)
