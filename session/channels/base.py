@@ -7,13 +7,14 @@ from session.packet import Packet, PacketType
 
 
 class Channel:
-    frame_assembler = FrameAssembler()
-    sent_packets: Set[int]
 
     def __init__(self, client: Client, channel: int):
         self.client = client
         self.channel = channel
-        self.sent_packets = set[int]()
+        self.frame_assembler: FrameAssembler = FrameAssembler(channel)
+        self.sent_packets: Set[int] = set[int]()
+        self.recv_decrypt_sequence: int = 0
+        self.send_encrypt_sequence: int = 0
         self._next_pkt_id = 0
 
     def handle_packet(self, packet: Packet):
@@ -73,8 +74,8 @@ class Channel:
     def send_reliable(self, msg_type: int, message: Message, pkt_id: int = -1):
         payload = message.SerializeToString()
         if self.frame_should_encrypt(msg_type):
-            payload = frame_encrypt(payload, self.client.auth_token, self.client.send_encrypt_sequence)
-            self.client.send_encrypt_sequence += 1
+            payload = frame_encrypt(payload, self.client.auth_token, self.send_encrypt_sequence)
+            self.send_encrypt_sequence += 1
         body = int.to_bytes(msg_type, 1, byteorder='little', signed=False) + payload
         if pkt_id == -1:
             pkt_id = self.next_pkt_id()

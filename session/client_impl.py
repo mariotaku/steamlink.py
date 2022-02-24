@@ -53,8 +53,8 @@ async def session_run(ip: str, port: int, transport: int, session_key: bytes) ->
 def session_worker(host_address: tuple[str, int], auth_token: bytes):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setblocking(False)
-    worker = SessionClient(sock, host_address, auth_token)
-    while not worker.closed:
+    client = ClientImpl(sock, host_address, auth_token)
+    while not client.closed:
         try:
             data, _ = sock.recvfrom(2048)
         except socket.error as e:
@@ -64,12 +64,10 @@ def session_worker(host_address: tuple[str, int], auth_token: bytes):
             else:
                 raise e
         else:
-            worker.handle_packet(data)
+            client.handle_packet(data)
 
 
-class SessionClient(Client):
-    channels: dict[int, Channel]
-    connection_channel: Channel
+class ClientImpl(Client):
 
     def __init__(self, sock: socket.socket, addr: tuple[str, int], auth_token: bytes):
         self.sock = sock
@@ -81,12 +79,12 @@ class SessionClient(Client):
         self.connect_timestamp = 0
         self.send_encrypt_sequence = 0
         self.recv_decrypt_sequence = 0
-        self.channels = {
+        self.channels: dict[int, Channel] = {
             k_EStreamChannelDiscovery: Discovery(self, k_EStreamChannelDiscovery),
             k_EStreamChannelControl: Control(self, k_EStreamChannelControl),
             k_EStreamChannelStats: Stats(self, k_EStreamChannelStats),
         }
-        self.connection_channel = Connection(self, k_EStreamChannelDiscovery)
+        self.connection_channel: Channel = Connection(self, k_EStreamChannelDiscovery)
         self.connect()
 
     def handle_packet(self, data: bytes):

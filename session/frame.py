@@ -81,11 +81,15 @@ class DataFrameHeader:
 
 
 class FrameAssembler:
-    frame_queue: Queue[Frame] = Queue()
-    temp_frame: Optional[Frame] = None
-    packet_headers: Dict[Tuple[int, int], PacketHeader] = {}
+
+    def __init__(self, channel: int):
+        self.channel = channel
+        self.frame_queue: Queue[Frame] = Queue()
+        self.temp_frame: Optional[Frame] = None
+        self.packet_headers: Dict[Tuple[int, int], PacketHeader] = {}
 
     def add_packet(self, packet: Packet) -> bool:
+        assert self.channel == packet.header.channel, f'Unexpected channel {packet.header.channel} (vs {self.channel})'
         header = packet.header
         pkt_type = header.pkt_type
         if self.is_packet_handled(header):
@@ -94,7 +98,7 @@ class FrameAssembler:
         if pkt_type in [PacketType.RELIABLE, PacketType.UNRELIABLE]:
             if self.temp_frame:
                 print(
-                    f'Message {packet.body[0]} (retransmit: {header.retransmit_count}) in channel {header.channel} already present in temp_frames')
+                    f'Message {packet.header} already present. {self.temp_frame.header}')
                 return False
             frame = Frame(header, packet.body, header.fragment_id == 0)
             if frame.completed:

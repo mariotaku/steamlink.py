@@ -21,7 +21,7 @@ from service.common import get_steamid
 from session.channels.audio import Audio
 from session.channels.base import Channel
 from session.channels.video import Video
-from session.frame import Frame, frame_should_encrypt, frame_decrypt, frame_hmac256
+from session.frame import Frame, frame_should_encrypt, frame_decrypt, frame_hmac256, frame_encrypt
 from session.packet import PacketType
 
 
@@ -61,11 +61,11 @@ class Control(Channel):
             msg_type = payload[0]
             if frame_should_encrypt(msg_type):
                 try:
-                    message = frame_decrypt(payload[1:], self.client.auth_token, self.client.recv_decrypt_sequence)
+                    message = frame_decrypt(payload[1:], self.client.auth_token, self.recv_decrypt_sequence)
                 except ValueError as e:
                     raise ValueError(
                         f'Failed to decode message (head {header}) {EStreamControlMessage.Name(msg_type)}: {e}')
-                self.client.recv_decrypt_sequence += 1
+                self.recv_decrypt_sequence += 1
                 self.on_reliable(header.pkt_id, msg_type, message)
             else:
                 self.on_reliable(header.pkt_id, msg_type, payload[1:])
