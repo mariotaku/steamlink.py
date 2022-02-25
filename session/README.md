@@ -3,20 +3,26 @@
 ```mermaid
 sequenceDiagram
   Client ->> Host: Discovery/Connect
+  Note over Client: Send client connection ID
   Host ->> Client: Discovery/Connect ACK
+  Note over Client: Got host connection ID, start client handshake
+  Client ->> Host: Reliable/Control:ClientHandshake
   par Discovery Channel
     loop While True
       Host ->> Client: Unconnected/Discovery:PingRequest
       Client ->> Host: Unconnected/Discovery:PingResponse
     end
   end
-  Client ->> Host: Reliable/Control:ClientHandshake
   Host ->> Client: Reliable/Control:ServerHandshake
+  Note over Client: Got mtu, start authentication
   Client ->> Host: Reliable/Control:AuthenticationRequest
   Host ->> Client: Reliable/Control:AuthenticationResponse
   Host ->> Client: Reliable/Control:NegotiationInit
+  Note over Client: Got host supported audio/video codecs
   Client ->> Host: Reliable/Control:NegotiationSetConfig
+  Note over Client: Send selected codecs and config
   Host ->> Client: Reliable/Control:NegotiationSetConfig
+  Note over Client: Got final config, respond with complete
   Client ->> Host: Reliable/Control:NegotiationComplete
   par Audio Data Channel
     Host ->> Client: Reliable/Control:StartAudioData
