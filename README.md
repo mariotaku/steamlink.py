@@ -2,13 +2,17 @@
 
 ## Encryption & Decryption
 
-### Symmetric Encryption & Decryption
+### Symmetric Encryption
+
+See [symmetric_encrypt_with_iv](https://github.com/mariotaku/steamlink.py/blob/acecffc9b5153f6b8074785c539c2b7d162bbced/service/ccrypto.py#L14)
+
+### Symmetric Decryption
+
+See [symmetric_decrypt_with_iv](https://github.com/mariotaku/steamlink.py/blob/acecffc9b5153f6b8074785c539c2b7d162bbced/service/ccrypto.py#L31)
 
 ### Asymmetric Encryption
 
-```
-RSA-PKCS1-OAEP(plain, key, hash=SHA1)
-```
+See [symmetric_encrypt_with_iv](https://github.com/mariotaku/steamlink.py/blob/acecffc9b5153f6b8074785c539c2b7d162bbced/service/ccrypto.py#L14)
 
 ## Discovery Protocol
 
