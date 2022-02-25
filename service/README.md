@@ -1,5 +1,17 @@
 ## Service Discovery
 
+## Scanning
+
+### Sequence
+
+```mermaid
+sequenceDiagram
+  Client ->> Host: Discovery
+  loop While True
+    Host ->> Client: Status
+  end
+```
+
 ## Pairing
 
 ### Sequence

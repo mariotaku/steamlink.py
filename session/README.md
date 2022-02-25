@@ -2,9 +2,9 @@
 
 ```mermaid
 sequenceDiagram
-  Client ->> Host: Connect
-  Host ->> Client: Connect ACK
-  par Host to Client
+  Client ->> Host: Discovery/Connect
+  Host ->> Client: Discovery/Connect ACK
+  par Discovery Channel
     loop While True
       Host ->> Client: Unconnected/Discovery:PingRequest
       Client ->> Host: Unconnected/Discovery:PingResponse
@@ -18,23 +18,25 @@ sequenceDiagram
   Client ->> Host: Reliable/Control:NegotiationSetConfig
   Host ->> Client: Reliable/Control:NegotiationSetConfig
   Client ->> Host: Reliable/Control:NegotiationComplete
-  par Host to Client
+  par Audio Data Channel
     Host ->> Client: Reliable/Control:StartAudioData
     loop Not StopAudioData
       Host ->> Client: Unreliable/Data:Packet 
     end
-  and Host to Client
+  and Video Data Channel
     Host ->> Client: Reliable/Control:StartVideoData
     loop Not StopVideoData
       Host ->> Client: Unreliable/Data:Packet 
     end
   end
-  Client ->> Host: Disconnect
+  Client ->> Host: Discovery/Disconnect
 ```
 
 ## Packet Types
 
-### Connect
+### Unconnected (0)
+
+### Connect (1)
 
 ```
 has_crc = false
@@ -42,30 +44,30 @@ type = 1
 payload = crc32c(b'Connect')
 ```
 
-### Connect ACK
+### Connect ACK (2)
 
-### Unreliable
+### Unreliable (3)
 
 `fragment_id` will be number of following fragments.
 
-### Unreliable Frag
+### Unreliable Frag (4)
 
-### Reliable
+### Reliable (5)
 
 `fragment_id` will be number of following fragments. For encrypted message, decryption should be done on concatenated
 message body.
 
-### Reliable Frag
+### Reliable Frag (6)
 
-### ACK
+### ACK (7)
 
 ACK will be responded if the peer accepted a reliable/frag packet.
 
-### Negative ACK (NACK)
+### Negative ACK, NACK (8)
 
 NACK will be sent if the peer doesn't accept a reliable/frag packet.
 
-### Disconnect
+### Disconnect (9)
 
 After client or host send this message, connection will be terminated.
 
