@@ -32,6 +32,22 @@ sequenceDiagram
   Client ->> Host: Discovery/Disconnect
 ```
 
+## Packet Structure
+
+| Size in Bits  | Name             | Type    | Description                            |
+|---------------|------------------|---------|----------------------------------------|
+| 1             | has_crc          | boolean |                                        |
+| 7             | type             | enum    | See types below                        |
+| 8             | retransmit_count | uint8   |                                        |
+| 8             | src_conn_id      | uint8   |                                        |
+| 8             | dst_conn_id      | uint8   |                                        |
+| 8             | channel          | uint8   |                                        |
+| 16            | fragment_id      | int16   | Fragment index or count                |
+| 16            | packet_id        | uint16  |                                        |
+| 32            | send_timestamp   | uint32  |                                        |
+| ...           | body             | bytes   | Body of the packet, might be encrypted |
+| 32 if has_crc | crc              | uint32  | crc32c(packet\[:-4\])                  |
+
 ## Packet Types
 
 ### Unconnected (0)
