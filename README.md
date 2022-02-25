@@ -8,6 +8,16 @@
 
 ### Sequence
 
+```mermaid
+sequenceDiagram
+  Client ->> Host: AuthorizationRequest
+  Host ->> Client: AuthorizationResponse
+  loop While AuthorizationInProgress
+    Client ->> Host: AuthorizationRequest
+    Host ->> Client: AuthorizationResponse
+  end
+```
+
 ### Results
 
 ## Requesting Stream

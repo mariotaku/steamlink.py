@@ -61,20 +61,16 @@ def get_device_id() -> int:
     return int.from_bytes(_obtain_random_bytes(_config_path('device_id.txt'), 8), byteorder='big', signed=False)
 
 
+def get_secret_key() -> bytes:
+    return _obtain_random_bytes(_config_path('secret_key.txt'), 32)
+
+
 def get_steamid() -> int:
     return int.from_bytes(_load_bytes(_config_path('steamid.txt'), 8), byteorder='big', signed=False)
 
 
 def set_steamid(steamid: int):
     return _save_bytes(_config_path('steamid.txt'), steamid.to_bytes(8, byteorder='big', signed=False))
-
-
-def get_secret_key() -> bytes:
-    return _obtain_random_bytes(_config_path('secret_key.txt'), 32)
-
-
-def set_secret_key(key: bytes):
-    _save_bytes(_config_path('secret_key.txt'), key)
 
 
 def message_parse(data: bytes) -> tuple[Message, Message]:
