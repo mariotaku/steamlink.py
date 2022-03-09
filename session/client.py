@@ -1,7 +1,13 @@
+from asyncio import AbstractEventLoop
+
 from session.packet import PacketType
 
 
 class Client:
+
+    def __init__(self, loop: AbstractEventLoop):
+        self.closed: bool = False
+        self.loop: AbstractEventLoop = loop
 
     def on_connected(self, conn_id: int, timestamp: int):
         pass

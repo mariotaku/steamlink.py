@@ -23,7 +23,7 @@ def authorization_req_ticket_plain(dev_id: int, pin: str, enc_key: bytes, name: 
     ticket.password = pin.encode('utf-8')
     ticket.identifier = dev_id
     ticket.payload = enc_key
-    ticket.usage = 0
+    ticket.usage = 0  # k_EKeyEscrowUsageStreamingDevice
     ticket.device_name = name
     ticket.device_model = '1234'
     ticket.device_serial = 'A1B2C3D4E5'

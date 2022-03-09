@@ -8,8 +8,7 @@ from queue import Queue
 from typing import Optional, Dict, Tuple
 
 from protobuf.steammessages_remoteplay_pb2 import k_EStreamControlAuthenticationResponse, \
-    k_EStreamControlAuthenticationRequest, k_EStreamControlServerHandshake, k_EStreamControlClientHandshake, \
-    k_EStreamChannelDataChannelStart
+    k_EStreamControlAuthenticationRequest, k_EStreamControlServerHandshake, k_EStreamControlClientHandshake
 from service import ccrypto
 from session.packet import PacketHeader, Packet, PacketType
 
@@ -111,7 +110,7 @@ class FrameAssembler:
                 print(f'No temp frame found for message in channel {header.channel}')
                 return False
             elif not frame.append_packet(packet):
-                print(f'Failed to append packet in channel {header.channel}')
+                print(f'Failed to append packet in channel {header.channel}: {header}')
                 return False
             elif frame.completed:
                 self.frame_queue.put_nowait(frame)

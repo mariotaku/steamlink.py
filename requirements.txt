@@ -3,3 +3,4 @@ pycryptodome~=3.14
 crc32c~=2.2
 opuslib
 pyalsaaudio
+dpkt~=1.9

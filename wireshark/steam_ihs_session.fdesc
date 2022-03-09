@@ -187,22 +187,55 @@ switch TStreamPayload
             case EStreamChannel::Stats :
                 EStreamStatsMessage                             payloadType;
                 set                                             payload_size = payload_size - 1;
-                subproto(payload_size){dissector=protobuf}      message;
+                if                                              (fragmentId == 0)
+                {
+                    subproto(payload_size){dissector=protobuf}  message;
+                }
+                else
+                {
+                    raw(payload_size)                           message;
+                }
             default :
                 raw(payload_size)                               payload;
         }
     case EStreamPacketType::unreliable :
         EStreamDataMessage                                      messageType;
         set                                                     payload_size = payload_size - 1;
-        if                                                      (channel > EStreamChannel::Stats && messageType == EStreamDataMessage::Packet && payload_size >= 12)
+        if                                                      (channel >= EStreamChannel::DataChannel1 && messageType == EStreamDataMessage::Packet && payload_size >= 12)
         {
             uint16                                              frameId;
             uint32                                              frameTimestamp;
             uint16                                              inputMark;
             uint32                                              inputRecvTimestamp;
             set                                                 payload_size = payload_size - 12;
+#            if                                                  (payload_size > 7)
+#            {
+#                save_position                                   frame_body_start;
+#                hide var uint32                                 find_nalu = frame_body_start + 7;
+#                goto_position                                   find_nalu;
+#                hide uint32                                     start_seq;
+#                if                                              (start_seq == 1)
+#                {
+#                    goto_position                               frame_body_start;
+#                    uint16                                      frameSequence;
+#                    hide uint2                                  frameFlagsUnused;
+#                    uint1                                       frameFlagsEncrypted;
+#                    uint1                                       frameFlagsKeyFrame;
+#                    uint1                                       frameFlagsFrameFinish;
+#                    uint1                                       frameFlagsRes1Inc;
+#                    uint1                                       frameFlagsNeedEscape;
+#                    uint1                                       frameFlagsNeedStartSeqs;
+#                    uint16                                      frameReserved1;
+#                    uint16                                      frameReserved2;
+#                    set                                         payload_size = payload_size - 7;
+#                }
+#            }
+            raw(payload_size)                                   payload;
         }
-        raw(payload_size)                                       payload;
+        else
+        {
+            raw(payload_size)                                   payload;
+        }
     default :
         raw(payload_size)                                       payload;
 }

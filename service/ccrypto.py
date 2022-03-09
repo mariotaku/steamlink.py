@@ -1,14 +1,19 @@
 # Algorithm described as per https://pkg.go.dev/github.com/Tommy-42/go-steam/cryptoutil
 import secrets
 from Crypto.Cipher import PKCS1_OAEP, AES
-from Crypto.Hash import SHA1
 from Crypto.PublicKey import RSA
 
 
 def rsa_encrypt(plaintext: bytes, pubkey: bytes) -> bytes:
     rsa_key = RSA.import_key(pubkey)
-    cipher = PKCS1_OAEP.new(rsa_key, hashAlgo=SHA1)
+    cipher = PKCS1_OAEP.new(rsa_key)
     return cipher.encrypt(plaintext)
+
+
+def rsa_decrypt(ciphertext: bytes, privkey: bytes) -> bytes:
+    rsa_key = RSA.import_key(privkey)
+    cipher = PKCS1_OAEP.new(rsa_key)
+    return cipher.decrypt(ciphertext)
 
 
 def symmetric_encrypt_with_iv(plaintext: bytes, iv: bytes, key: bytes, with_iv: bool) -> bytes:

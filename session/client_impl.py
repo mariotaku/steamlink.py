@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 import asyncio
 import crc32c
 import secrets
+from asyncio import AbstractEventLoop
 
 from session.channels.base import Channel
 from session.channels.control import Control
@@ -46,14 +47,14 @@ async def session_run_command(ip: str, port: int, transport: int, session_key: b
 async def session_run(ip: str, port: int, transport: int, session_key: bytes) -> int:
     loop = asyncio.get_event_loop()
     with ThreadPoolExecutor(max_workers=1) as executor:
-        await loop.run_in_executor(executor, lambda: session_worker((ip, port), session_key))
+        await loop.run_in_executor(executor, lambda: session_worker(loop, (ip, port), session_key))
     return 0
 
 
-def session_worker(host_address: tuple[str, int], auth_token: bytes):
+def session_worker(loop: AbstractEventLoop, host_address: tuple[str, int], auth_token: bytes):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setblocking(False)
-    client = ClientImpl(sock, host_address, auth_token)
+    client = ClientImpl(loop, sock, host_address, auth_token)
     while not client.closed:
         try:
             data, _ = sock.recvfrom(2048)
@@ -69,7 +70,8 @@ def session_worker(host_address: tuple[str, int], auth_token: bytes):
 
 class ClientImpl(Client):
 
-    def __init__(self, sock: socket.socket, addr: tuple[str, int], auth_token: bytes):
+    def __init__(self, loop: AbstractEventLoop, sock: socket.socket, addr: tuple[str, int], auth_token: bytes):
+        super().__init__(loop)
         self.sock = sock
         self.closed = False
         self.addr = addr

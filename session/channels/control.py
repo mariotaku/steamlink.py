@@ -1,3 +1,4 @@
+import asyncio
 from google.protobuf.message import DecodeError, Message
 
 from protobuf.steammessages_remoteclient_discovery_pb2 import k_EStreamDeviceFormFactorTV
@@ -16,12 +17,12 @@ from protobuf.steammessages_remoteplay_pb2 import k_EStreamControlClientHandshak
     k_EStreamControlNegotiationComplete, CNegotiationSetConfigMsg, CNegotiationInitMsg, CAuthenticationResponseMsg, \
     CServerHandshakeMsg, k_EStreamVersionCurrent, CAuthenticationRequestMsg, \
     CStreamingClientCaps, CStreamingClientConfig, CStreamVideoMode, k_EStreamVideoCodecHEVC, k_EStreamVideoCodecH264, \
-    k_EStreamAudioCodecOpus, CNegotiatedConfig
+    k_EStreamAudioCodecOpus, CNegotiatedConfig, k_EStreamControlKeepAlive, CKeepAliveMsg
 from service.common import get_steamid
 from session.channels.audio import Audio
 from session.channels.base import Channel
 from session.channels.video import Video
-from session.frame import Frame, frame_should_encrypt, frame_decrypt, frame_hmac256, frame_encrypt
+from session.frame import Frame, frame_should_encrypt, frame_decrypt, frame_hmac256
 from session.packet import PacketType
 
 
@@ -166,7 +167,18 @@ class Control(Channel):
     def on_negotation_set_config(self, pkt_id: int, message: CNegotiationSetConfigMsg):
         out_msg = CNegotiationCompleteMsg()
         self.send_reliable(k_EStreamControlNegotiationComplete, out_msg, pkt_id)
+        self.start_heartbeat()
 
     def frame_should_encrypt(self, msg_type: int) -> bool:
         return msg_type not in [k_EStreamControlClientHandshake, k_EStreamControlServerHandshake,
                                 k_EStreamControlAuthenticationRequest, k_EStreamControlAuthenticationResponse]
+
+    async def heartbeat_task(self):
+        while not self.client.closed:
+            message = CKeepAliveMsg()
+            self.send_reliable(k_EStreamControlKeepAlive, message)
+            await asyncio.sleep(7)
+
+    def start_heartbeat(self):
+        loop = self.client.loop
+        loop.call_later(7, self.heartbeat_task)

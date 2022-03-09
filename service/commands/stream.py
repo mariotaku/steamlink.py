@@ -7,7 +7,7 @@ from protobuf.steammessages_remoteclient_discovery_pb2 import CMsgRemoteClientBr
     k_ERemoteDeviceStreamingRequest, \
     k_ERemoteDeviceStreamingResponse, k_ERemoteDeviceProofRequest, k_ERemoteDeviceStreamingInProgress, \
     k_ERemoteDeviceStreamingSuccess, CMsgRemoteClientBroadcastHeader, k_ERemoteDeviceProofResponse, \
-    CMsgRemoteDeviceProofResponse, k_ERemoteDeviceStreamingFailed
+    CMsgRemoteDeviceProofResponse, k_ERemoteDeviceStreamingFailed, ERemoteDeviceStreamingResult
 from service import streaming, ccrypto
 from service.commands.base import CliCommand
 from service.common import ServiceProtocol, get_secret_key
@@ -79,8 +79,7 @@ class StreamCommand(CliCommand):
         if msg.result == k_ERemoteDeviceStreamingSuccess:
             self.streaming_info = msg
             self.ended = True
-        if msg.result == k_ERemoteDeviceStreamingFailed:
-            self.ended = True
         elif msg.result != k_ERemoteDeviceStreamingInProgress:
+            print(f'Streaming failed: {ERemoteDeviceStreamingResult.Name(msg.result)}')
             self.ended = True
         return True
